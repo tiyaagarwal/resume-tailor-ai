@@ -44,3 +44,4 @@ Thumbs.db
 coverage/
 .cache/
 tmp/
+node_modules
