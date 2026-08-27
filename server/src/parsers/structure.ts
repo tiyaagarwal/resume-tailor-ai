@@ -1,0 +1,359 @@
+import type {
+  AchievementEntry,
+  CertificationEntry,
+  EducationEntry,
+  ExperienceEntry,
+  MasterResume,
+  PersonalInfo,
+  ProfileLink,
+  ProjectEntry,
+  SkillCategories,
+} from '../types/resume.ts';
+import { emptySkills } from '../types/resume.ts';
+import { newId, nowIso } from '../utils/id.ts';
+import { classifyLinks, findProjectLinks } from './links.ts';
+
+/**
+ * Deterministic structuring of resume text into the MasterResume schema.
+ *
+ * This runs unconditionally. When an Anthropic API key is present the AI
+ * structurer refines the result, but the deterministic pass is what guarantees
+ * the app still works offline and gives the AI a grounded starting point rather
+ * than a blank page.
+ */
+
+type SectionName =
+  | 'summary'
+  | 'education'
+  | 'experience'
+  | 'internship'
+  | 'projects'
+  | 'skills'
+  | 'certifications'
+  | 'achievements'
+  | 'unknown';
+
+const HEADINGS: Array<{ re: RegExp; name: SectionName }> = [
+  { re: /^(professional\s+)?summary$|^objective$|^about( me)?$|^profile$/i, name: 'summary' },
+  { re: /^education$|^academic(s| background| qualifications)?$/i, name: 'education' },
+  { re: /^(work\s+|professional\s+|relevant\s+)?experience$|^employment( history)?$/i, name: 'experience' },
+  { re: /^internships?$|^internship experience$/i, name: 'internship' },
+  { re: /^(personal\s+|academic\s+|key\s+)?projects$/i, name: 'projects' },
+  { re: /^(technical\s+)?skills( (&|and) (interests|abilities))?$|^technologies$|^tech stack$/i, name: 'skills' },
+  { re: /^certifications?$|^licenses?( (&|and) certifications?)?$|^courses$/i, name: 'certifications' },
+  { re: /^achievements?$|^awards?( (&|and) achievements?)?$|^honou?rs$|^accomplishments$/i, name: 'achievements' },
+];
+
+const BULLET_RE = /^\s*(?:[•·●▪◦‣▸*\u2022]|-{1,2}|\u2013|\u2014)\s+/;
+
+const SKILL_LABELS: Array<{ re: RegExp; key: keyof SkillCategories }> = [
+  { re: /^(programming\s+)?languages?$/i, key: 'languages' },
+  { re: /^frameworks?( (&|and) libraries)?$/i, key: 'frameworks' },
+  { re: /^librar(y|ies)$/i, key: 'libraries' },
+  { re: /^(developer\s+)?tools?$|^software$|^platforms?$/i, key: 'tools' },
+  { re: /^technologies$|^databases?$|^cloud$|^concepts?$|^other$/i, key: 'technologies' },
+];
+
+const isHeading = (line: string): SectionName | null => {
+  const clean = line.replace(/[:•\-–—_|]+$/g, '').replace(/^[|\s]+/, '').trim();
+  if (!clean || clean.length > 42) return null;
+  // Headings are short and typically fully uppercase or title-case standalone.
+  const upperish = clean === clean.toUpperCase() || /^[A-Z][a-z]+( [A-Z][a-z]+)*$/.test(clean);
+  if (!upperish) return null;
+  for (const h of HEADINGS) if (h.re.test(clean)) return h.name;
+  return null;
+};
+
+const stripBullet = (l: string): string => l.replace(BULLET_RE, '').trim();
+
+/** Splits a date range like "May 2025 – Jul 2025" or "2022 - 2026". */
+function splitDates(s: string): { startDate?: string; endDate?: string } {
+  const m = /([A-Z][a-z]{2,8}\.?\s*\d{4}|\d{4}|Present|Current)\s*[–—\-]{1,2}\s*([A-Z][a-z]{2,8}\.?\s*\d{4}|\d{4}|Present|Current)/i.exec(s);
+  if (m) return { startDate: m[1].trim(), endDate: m[2].trim() };
+  const single = /([A-Z][a-z]{2,8}\.?\s*\d{4}|\b(19|20)\d{2}\b)/.exec(s);
+  return single ? { endDate: single[1].trim() } : {};
+}
+
+const DATE_RE = /((?:[A-Z][a-z]{2,8}\.?\s*)?\d{4}\s*[–—\-]{1,2}\s*(?:(?:[A-Z][a-z]{2,8}\.?\s*)?\d{4}|Present|Current))/i;
+
+function splitSections(lines: string[]): Map<SectionName, string[]> {
+  const out = new Map<SectionName, string[]>();
+  let current: SectionName = 'unknown';
+  out.set('unknown', []);
+  for (const line of lines) {
+    const heading = isHeading(line);
+    if (heading) {
+      current = heading;
+      if (!out.has(current)) out.set(current, []);
+      continue;
+    }
+    if (!out.has(current)) out.set(current, []);
+    out.get(current)!.push(line);
+  }
+  return out;
+}
+
+function parsePersonalInfo(headerLines: string[], text: string): PersonalInfo {
+  const email = /\b[\w.+-]+@[\w-]+\.[\w.]+\b/.exec(text)?.[0] ?? '';
+  // Phone numbers vary far too much for one rigid pattern (+91-98765-43210,
+  // (555) 123-4567, 555.123.4567). Scan for digit-ish runs and accept the first
+  // whose digit count is plausible and which isn't a year range or a GPA.
+  let phone = '';
+  for (const part of headerLines.join(' | ').split('|')) {
+    const candidate = /[+(]?\d[\d\s().\-]{5,20}\d/.exec(part)?.[0]?.trim();
+    if (!candidate) continue;
+    const digits = candidate.replace(/\D/g, '');
+    if (digits.length < 7 || digits.length > 15) continue;
+    if (/^(19|20)\d{2}$/.test(digits)) continue;
+    phone = candidate.replace(/\s{2,}/g, ' ');
+    break;
+  }
+
+  // The name is the first substantive line that isn't the contact row.
+  let fullName = '';
+  for (const line of headerLines) {
+    const c = line.trim();
+    if (!c || c.includes('@') || /https?:/i.test(c) || /\d{3}/.test(c)) continue;
+    if (c.split(/\s+/).length <= 5) {
+      fullName = c.replace(/\s*\|\s*/g, ' ').trim();
+      break;
+    }
+  }
+
+  // Location: a "City, Region" fragment on the contact row.
+  let location = '';
+  for (const line of headerLines) {
+    for (const part of line.split('|')) {
+      const p = part.trim();
+      if (/@|https?:|\d{4}/.test(p)) continue;
+      if (/^[A-Z][\w.'-]+(?:\s[\w.'-]+)*,\s*[A-Z][\w.'-]+/.test(p) && p.length < 60) {
+        location = p;
+        break;
+      }
+    }
+    if (location) break;
+  }
+
+  return {
+    fullName: fullName || 'Unknown Candidate',
+    email,
+    phone,
+    location,
+  };
+}
+
+function parseSkills(lines: string[]): SkillCategories {
+  const skills = emptySkills();
+  for (const line of lines) {
+    const clean = stripBullet(line);
+    const m = /^([A-Za-z /&+]{3,40}?)\s*[:\-–]\s*(.+)$/.exec(clean);
+    if (m) {
+      const label = m[1].trim();
+      const values = m[2]
+        .split(/[,;|]/)
+        .map((v) => v.trim().replace(/\.$/, ''))
+        .filter((v) => v.length > 0 && v.length < 40);
+      const rule = SKILL_LABELS.find((r) => r.re.test(label));
+      const key: keyof SkillCategories = rule ? rule.key : 'other';
+      skills[key].push(...values);
+    } else if (clean.includes(',')) {
+      skills.other.push(
+        ...clean
+          .split(/[,;|]/)
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0 && v.length < 40),
+      );
+    }
+  }
+  return skills;
+}
+
+function parseEducation(lines: string[]): EducationEntry[] {
+  const entries: EducationEntry[] = [];
+  for (const raw of lines) {
+    const line = stripBullet(raw);
+    if (!line) continue;
+    if (/^relevant coursework|^coursework/i.test(line)) {
+      const list = line.split(/[:\-–]/).slice(1).join(':');
+      if (entries.length > 0) {
+        entries[entries.length - 1].coursework = list
+          .split(/[,;]/)
+          .map((c) => c.trim())
+          .filter(Boolean);
+      }
+      continue;
+    }
+    // An education line names an institution and usually a degree or date.
+    if (!/university|college|institute|school|academy|b\.?tech|m\.?tech|b\.?e\b|bachelor|master|diploma|high school/i.test(line)) {
+      continue;
+    }
+    const gpa = /\b(?:CGPA|GPA|Percentage)\s*[:\-]?\s*([\d.]+\s*(?:\/\s*\d+)?%?)/i.exec(line)?.[1];
+    const { startDate, endDate } = splitDates(line);
+    const parts = line.split(/\s*[—–|]\s*|\s+-\s+/).map((p) => p.trim()).filter(Boolean);
+    const institution = parts[0] ?? line;
+    const degree =
+      parts.slice(1).find((p) => /tech|bachelor|master|science|engineering|diploma|degree|b\.?e\b/i.test(p)) ??
+      parts[1] ??
+      '';
+    entries.push({
+      id: newId('edu'),
+      institution: institution.replace(/,\s*[A-Z][a-z]+$/, '').trim(),
+      degree: degree.replace(/,\s*(CGPA|GPA).*$/i, '').replace(/,\s*\d{4}.*$/, '').trim(),
+      location: /,\s*([A-Z][a-z]+)$/.exec(institution)?.[1],
+      startDate,
+      endDate,
+      gpa: gpa?.trim(),
+    });
+  }
+  return entries;
+}
+
+/** Shared machinery for EXPERIENCE and INTERNSHIP blocks. */
+function parseExperience(lines: string[], kind: 'experience' | 'internship'): ExperienceEntry[] {
+  const entries: ExperienceEntry[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    if (BULLET_RE.test(raw)) {
+      if (entries.length > 0) entries[entries.length - 1].bullets.push(stripBullet(raw));
+      continue;
+    }
+
+    // A header line introduces a new role. It carries a date range or commas.
+    const { startDate, endDate } = splitDates(line);
+    const withoutDates = line.replace(DATE_RE, '').replace(/\s*[—–|]\s*$/, '').trim();
+    const parts = withoutDates.split(/\s*[|—–]\s*|,\s+/).map((p) => p.trim()).filter(Boolean);
+
+    entries.push({
+      id: newId(kind === 'internship' ? 'intern' : 'exp'),
+      kind,
+      role: parts[0] ?? withoutDates,
+      organization: parts[1] ?? '',
+      location: parts[2],
+      startDate,
+      endDate,
+      bullets: [],
+      technologies: [],
+    });
+  }
+  return entries.filter((e) => e.role && (e.bullets.length > 0 || e.organization));
+}
+
+function parseProjects(lines: string[], discovered: ProfileLink[]): ProjectEntry[] {
+  const entries: ProjectEntry[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    if (BULLET_RE.test(raw)) {
+      if (entries.length > 0) entries[entries.length - 1].bullets.push(stripBullet(raw));
+      continue;
+    }
+
+    // "Name | Tech, Tech | Repo | Live"
+    const segments = line.split(/\s*\|\s*/).map((s) => s.trim()).filter(Boolean);
+    const name = segments[0].replace(/[:,]$/, '').trim();
+    if (!name) continue;
+
+    const technologies: string[] = [];
+    for (const seg of segments.slice(1)) {
+      if (/^(repo|repository|github|code|source|live|demo|website|link)$/i.test(seg)) continue;
+      if (/https?:/i.test(seg)) continue;
+      technologies.push(...seg.split(/[,/]/).map((t) => t.trim()).filter(Boolean));
+    }
+
+    const { startDate, endDate } = splitDates(line);
+    entries.push({
+      id: newId('proj'),
+      name,
+      bullets: [],
+      technologies,
+      startDate,
+      endDate,
+      ...findProjectLinks(name, discovered),
+    });
+  }
+  return entries.filter((p) => p.bullets.length > 0 || p.technologies.length > 0);
+}
+
+function parseCertifications(lines: string[]): CertificationEntry[] {
+  return lines
+    .map((l) => stripBullet(l))
+    .filter((l) => l.length > 3)
+    .map((l) => {
+      const parts = l.split(/\s*[—–|]\s*|\s+-\s+/).map((p) => p.trim());
+      const date = /\b(19|20)\d{2}\b/.exec(l)?.[0];
+      return {
+        id: newId('cert'),
+        name: parts[0].replace(/,?\s*\b(19|20)\d{2}\b\.?$/, '').trim(),
+        issuer: parts[1]?.replace(/,?\s*\b(19|20)\d{2}\b\.?$/, '').trim() || undefined,
+        date,
+      };
+    });
+}
+
+function parseAchievements(lines: string[]): AchievementEntry[] {
+  return lines
+    .map((l) => stripBullet(l))
+    .filter((l) => l.length > 3)
+    .map((l) => ({ id: newId('ach'), text: l, date: /\b(19|20)\d{2}\b/.exec(l)?.[0] }));
+}
+
+export interface StructureInput {
+  text: string;
+  links: ProfileLink[];
+  sourceFileName: string;
+}
+
+export function structureResume(input: StructureInput): MasterResume {
+  const lines = input.text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const sections = splitSections(lines);
+
+  const header = sections.get('unknown') ?? [];
+  const personalInfo = parsePersonalInfo(header.slice(0, 6), input.text);
+
+  const summaryLines = sections.get('summary') ?? [];
+  const summary = summaryLines.join(' ').trim();
+
+  const experience = parseExperience(sections.get('experience') ?? [], 'experience');
+  const internships = parseExperience(sections.get('internship') ?? [], 'internship');
+  const projects = parseProjects(sections.get('projects') ?? [], input.links);
+  const skills = parseSkills(sections.get('skills') ?? []);
+
+  // Technologies named inside a role's bullets are legitimate signal for
+  // matching, so long as they already appear in the declared skill list.
+  const declared = new Set(
+    [
+      ...skills.languages,
+      ...skills.frameworks,
+      ...skills.libraries,
+      ...skills.tools,
+      ...skills.technologies,
+    ].map((s) => s.toLowerCase()),
+  );
+  for (const entry of [...experience, ...internships]) {
+    const blob = entry.bullets.join(' ').toLowerCase();
+    entry.technologies = [...declared].filter((d) => blob.includes(d));
+  }
+
+  const now = nowIso();
+  return {
+    id: newId('master'),
+    createdAt: now,
+    updatedAt: now,
+    sourceFileName: input.sourceFileName,
+    personalInfo,
+    links: classifyLinks(input.links, personalInfo.email),
+    summary,
+    education: parseEducation(sections.get('education') ?? []),
+    skills,
+    experience,
+    internships,
+    projects,
+    certifications: parseCertifications(sections.get('certifications') ?? []),
+    achievements: parseAchievements(sections.get('achievements') ?? []),
+    rawText: input.text,
+    discoveredLinks: input.links,
+  };
+}
