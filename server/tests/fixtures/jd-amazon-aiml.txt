@@ -1,0 +1,32 @@
+Amazon — Machine Learning Engineer I (Applied Science, Search)
+
+Location: Bangalore, India (Hybrid)
+
+About Amazon
+Amazon Search builds the systems that help hundreds of millions of customers find what
+they need. The Applied Science team owns ranking, retrieval and relevance for the Search
+experience across Amazon's marketplaces.
+
+What you will do
+- Design, train and evaluate machine learning models that improve retrieval and ranking quality.
+- Build and maintain data pipelines that transform raw behavioural logs into training datasets.
+- Work with large language models and embedding-based retrieval to power semantic search.
+- Deploy models to production and monitor them, partnering with engineers on latency budgets.
+- Run rigorous offline experiments and online A/B tests, and communicate results to stakeholders.
+- Write production-quality Python code and contribute to shared ML libraries.
+
+Basic Qualifications
+- Bachelor's degree in Computer Science, Machine Learning or a related quantitative field.
+- Proficiency in Python and experience with PyTorch or TensorFlow.
+- Solid understanding of machine learning fundamentals, deep learning and NLP.
+- Experience with SQL and working with large datasets.
+- Strong grounding in data structures and algorithms.
+
+Preferred Qualifications
+- Experience with retrieval augmented generation (RAG) and vector databases such as FAISS.
+- Familiarity with AWS, especially SageMaker, Lambda and S3.
+- Experience with Docker and CI/CD for model deployment.
+- Exposure to Spark or Airflow for large-scale data processing.
+- Publications or research experience in NLP or information retrieval.
+
+Amazon is an equal opportunity employer.

@@ -1,0 +1,22 @@
+Frontend Engineer (React) — Design Systems
+Company: Swiggy
+Location: Bangalore, Hybrid
+
+What you'll do
+- Build accessible, responsive user interfaces in React and TypeScript.
+- Own and evolve a shared component library used across multiple product teams.
+- Collaborate closely with designers in Figma to translate designs into production UI.
+- Improve frontend performance, bundle size and Core Web Vitals.
+- Write unit tests with Jest and maintain visual regression coverage.
+
+Requirements
+- Strong JavaScript and TypeScript fundamentals.
+- Production experience with React and modern state management such as Redux.
+- Solid HTML and CSS skills, including responsive layout and web accessibility.
+- Experience consuming REST APIs and handling asynchronous data.
+- Familiarity with Git and CI/CD workflows.
+
+Preferred
+- Experience with Next.js and server-side rendering.
+- Familiarity with Tailwind CSS.
+- Interest in design systems and component API design.

@@ -1,0 +1,27 @@
+Backend Engineer — Payments Platform
+Company: Razorpay
+Location: Remote
+
+The Role
+Razorpay's Payments Platform team builds the transactional core that moves money for
+millions of Indian businesses. You will own backend services end to end.
+
+Responsibilities
+- Design and build scalable REST APIs and microservices that handle high transaction volume.
+- Model data in PostgreSQL and optimise queries, indexes and schema migrations.
+- Use Redis for caching and idempotency in distributed payment flows.
+- Write unit and integration tests and maintain CI/CD pipelines.
+- Containerise services with Docker and deploy to Kubernetes.
+- Participate in system design reviews and on-call rotations.
+
+Requirements
+- 2+ years building backend services in Java or Python.
+- Hands-on experience with Spring Boot or a comparable backend framework.
+- Strong SQL skills and experience with PostgreSQL or MySQL.
+- Understanding of distributed systems, concurrency and system design.
+- Experience with Git and modern CI/CD practices.
+
+Nice to have
+- Experience with Kafka or event-driven architectures.
+- Exposure to AWS and infrastructure as code with Terraform.
+- Familiarity with gRPC.
