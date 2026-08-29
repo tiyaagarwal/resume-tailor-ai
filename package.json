@@ -1,0 +1,13 @@
+{
+  "name": "resumetailor-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ResumeTailor AI — one master resume, unlimited truthful, ATS-friendly, one-page Jake's-Resume-style tailored resumes.",
+  "scripts": {
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "test": "npm test --prefix server",
+    "typecheck": "npm run typecheck --prefix server && npm run typecheck --prefix client"
+  }
+}
