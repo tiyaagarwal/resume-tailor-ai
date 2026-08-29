@@ -168,11 +168,41 @@ function parseSkills(lines: string[]): SkillCategories {
   return skills;
 }
 
+const INSTITUTION_RE = /university|college|institute|school|academy/i;
+const DEGREE_RE = /b\.?\s?tech|m\.?\s?tech|b\.?\s?e\b|m\.?\s?e\b|bachelor|master|diploma|ph\.?d|doctorate|associate degree|high school/i;
+
+function extractGpa(line: string): string | undefined {
+  return /\b(?:CGPA|GPA|Percentage)\s*[:\-]?\s*([\d.]+\s*(?:\/\s*\d+)?%?)/i.exec(line)?.[1]?.trim();
+}
+
+/**
+ * Education entries commonly span two source lines in Jake's-Resume-style
+ * layouts — "Institution, Location" then "Degree, Dates" underneath — which a
+ * naive per-line scan would misread as two separate schools. A line starting
+ * a NEW entry must name an institution; a line that only names a degree (no
+ * institution keyword) is treated as filling in the entry still being built,
+ * never as a school of its own.
+ */
 function parseEducation(lines: string[]): EducationEntry[] {
   const entries: EducationEntry[] = [];
+
+  const applyDegreeLine = (entry: EducationEntry, line: string): void => {
+    const gpa = extractGpa(line);
+    const { startDate, endDate } = splitDates(line);
+    const parts = line.split(/\s*[—–|]\s*|\s+-\s+/).map((p) => p.trim()).filter(Boolean);
+    const degree =
+      parts.find((p) => DEGREE_RE.test(p)) ??
+      (parts[0] && !isDateOnly(parts[0]) && !/^(?:CGPA|GPA)/i.test(parts[0]) ? parts[0] : '');
+    if (degree) entry.degree = degree.replace(/,\s*(CGPA|GPA).*$/i, '').replace(/,\s*\d{4}.*$/, '').trim();
+    if (gpa) entry.gpa = gpa;
+    entry.startDate ??= startDate;
+    if (endDate) entry.endDate = endDate;
+  };
+
   for (const raw of lines) {
     const line = stripBullet(raw);
     if (!line) continue;
+
     if (/^relevant coursework|^coursework/i.test(line)) {
       const list = line.split(/[:\-–]/).slice(1).join(':');
       if (entries.length > 0) {
@@ -183,27 +213,33 @@ function parseEducation(lines: string[]): EducationEntry[] {
       }
       continue;
     }
-    // An education line names an institution and usually a degree or date.
-    if (!/university|college|institute|school|academy|b\.?tech|m\.?tech|b\.?e\b|bachelor|master|diploma|high school/i.test(line)) {
+
+    const hasInstitution = INSTITUTION_RE.test(line);
+    const hasDegree = DEGREE_RE.test(line);
+    const last = entries[entries.length - 1];
+
+    if (hasInstitution) {
+      // A fresh institution line always starts a new entry, even if the same
+      // line also happens to name the degree (the common single-line format).
+      const parts = line.split(/\s*[—–|]\s*|\s+-\s+/).map((p) => p.trim()).filter(Boolean);
+      const institution = parts[0] ?? line;
+      const entry: EducationEntry = {
+        id: newId('edu'),
+        institution: institution.replace(/,\s*[A-Z][a-z]+$/, '').trim(),
+        degree: '',
+        location: /,\s*([A-Z][a-z]+)$/.exec(institution)?.[1],
+      };
+      if (hasDegree || /\d{4}/.test(line) || /CGPA|GPA/i.test(line)) applyDegreeLine(entry, line);
+      entries.push(entry);
       continue;
     }
-    const gpa = /\b(?:CGPA|GPA|Percentage)\s*[:\-]?\s*([\d.]+\s*(?:\/\s*\d+)?%?)/i.exec(line)?.[1];
-    const { startDate, endDate } = splitDates(line);
-    const parts = line.split(/\s*[—–|]\s*|\s+-\s+/).map((p) => p.trim()).filter(Boolean);
-    const institution = parts[0] ?? line;
-    const degree =
-      parts.slice(1).find((p) => /tech|bachelor|master|science|engineering|diploma|degree|b\.?e\b/i.test(p)) ??
-      parts[1] ??
-      '';
-    entries.push({
-      id: newId('edu'),
-      institution: institution.replace(/,\s*[A-Z][a-z]+$/, '').trim(),
-      degree: degree.replace(/,\s*(CGPA|GPA).*$/i, '').replace(/,\s*\d{4}.*$/, '').trim(),
-      location: /,\s*([A-Z][a-z]+)$/.exec(institution)?.[1],
-      startDate,
-      endDate,
-      gpa: gpa?.trim(),
-    });
+
+    if (hasDegree || (last && !last.degree && (/\d{4}/.test(line) || isDateOnly(line)))) {
+      // No institution keyword: this line completes whichever entry is still open.
+      if (last) applyDegreeLine(last, line);
+      continue;
+    }
+    // Neither an institution nor a degree/date line — not education content we recognise.
   }
   return entries;
 }
@@ -240,6 +276,12 @@ function parseExperience(lines: string[], kind: 'experience' | 'internship'): Ex
   return entries.filter((e) => e.role && (e.bullets.length > 0 || e.organization));
 }
 
+/** True when a line/segment is nothing but a date range, e.g. "Jan 2025 -- Mar 2025". */
+function isDateOnly(s: string): boolean {
+  const stripped = s.replace(DATE_RE, '').trim();
+  return stripped.length === 0 && DATE_RE.test(s);
+}
+
 function parseProjects(lines: string[], discovered: ProfileLink[]): ProjectEntry[] {
   const entries: ProjectEntry[] = [];
   for (const raw of lines) {
@@ -251,15 +293,33 @@ function parseProjects(lines: string[], discovered: ProfileLink[]): ProjectEntry
       continue;
     }
 
+    // A layout where the date range renders on its own line (common when a
+    // right-aligned date column gets extracted as a separate paragraph) is
+    // a continuation of the previous project, never a new one.
+    if (isDateOnly(line)) {
+      const prev = entries[entries.length - 1];
+      if (prev && !prev.endDate) {
+        const { startDate, endDate } = splitDates(line);
+        prev.startDate ??= startDate;
+        prev.endDate = endDate;
+      }
+      continue;
+    }
+
     // "Name | Tech, Tech | Repo | Live"
     const segments = line.split(/\s*\|\s*/).map((s) => s.trim()).filter(Boolean);
     const name = segments[0].replace(/[:,]$/, '').trim();
-    if (!name) continue;
+    if (!name || isDateOnly(name)) continue;
 
     const technologies: string[] = [];
     for (const seg of segments.slice(1)) {
       if (/^(repo|repository|github|code|source|live|demo|website|link)$/i.test(seg)) continue;
       if (/https?:/i.test(seg)) continue;
+      if (isDateOnly(seg)) continue; // a trailing "Jan 2025 -- Mar 2025" pipe segment is the date, not a tech
+      // A bare domain typed without a scheme (e.g. "github.com/user/repo" or
+      // "myproject.dev") is still a URL, not a technology — resumes routinely
+      // drop "https://" in the visible text since the PDF makes it a hyperlink.
+      if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(\/\S*)?$/i.test(seg)) continue;
       technologies.push(...seg.split(/[,/]/).map((t) => t.trim()).filter(Boolean));
     }
 

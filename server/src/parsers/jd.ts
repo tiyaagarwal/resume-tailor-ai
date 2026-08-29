@@ -76,8 +76,11 @@ function detectSeniority(text: string): SeniorityLevel {
 }
 
 function extractJobTitle(lines: string[], text: string): string {
+  // Real titles routinely stack more than one qualifier ("Backend Software
+  // Engineer", "Senior Full Stack JavaScript Developer"), so the qualifier
+  // group repeats rather than matching only a single word.
   const TITLE_RE =
-    /\b((?:senior|staff|principal|lead|junior|entry[-\s]level)?\s*(?:software|ml|machine learning|ai|data|backend|back[-\s]end|frontend|front[-\s]end|full[-\s]?stack|devops|platform|mobile|android|ios|research)?\s*(?:engineer|developer|scientist|architect|intern|analyst)(?:\s*[-,]?\s*(?:i{1,3}|[123]))?)\b/i;
+    /\b((?:senior|staff|principal|lead|junior|entry[-\s]level)?\s*(?:(?:software|ml|machine learning|ai|data|backend|back[-\s]end|frontend|front[-\s]end|full[-\s]?stack|devops|platform|mobile|android|ios|research|javascript|python|cloud|security|infrastructure|product|qa)\s+){0,2}(?:engineer|developer|scientist|architect|intern|analyst)(?:\s*[-,]?\s*(?:i{1,3}|[123]))?)\b/i;
 
   const labelled = /(?:job title|position|role)\s*[:\-]\s*(.{3,70})/i.exec(text)?.[1];
   if (labelled) return cleanTitle(labelled);
