@@ -1,0 +1,54 @@
+Ananya Sharma
+Bangalore, India | ananya.sharma.dev@gmail.com | +91 98765 43210
+LinkedIn: https://www.linkedin.com/in/ananya-sharma-dev | GitHub: https://github.com/ananyasharma
+Portfolio: https://ananyasharma.dev | LeetCode: https://leetcode.com/u/ananyasharma
+
+EDUCATION
+Indian Institute of Technology, Roorkee, Uttarakhand
+B.Tech in Computer Science and Engineering, CGPA: 8.72/10
+Aug 2022 -- May 2026
+Relevant Coursework: Data Structures, Algorithms, Machine Learning, Operating Systems, Database Systems
+
+TECHNICAL SKILLS
+Languages: Python, Java, C++, JavaScript, TypeScript, SQL
+Frameworks: PyTorch, TensorFlow, React, Node.js, Express, FastAPI, Django
+Libraries: pandas, NumPy, scikit-learn, Hugging Face, LangChain, Redux
+Developer Tools: Docker, Kubernetes, Git, AWS, GitHub Actions, Postman
+Technologies: PostgreSQL, MongoDB, Redis, FAISS, Elasticsearch, Kafka
+
+INTERNSHIPS
+Machine Learning Intern, Flipkart -- Bangalore
+May 2025 -- Jul 2025
+- Built a semantic search re-ranking model using PyTorch and BERT embeddings, improving offline nDCG@10 by 6.4% on the internal benchmark.
+- Designed a FAISS-based vector retrieval pipeline over 40M product embeddings, cutting p95 query latency from 210ms to 85ms.
+- Wrote data pipelines in Python and SQL to build training sets from six months of clickstream logs.
+- Collaborated with senior scientists to run A/B tests and presented results to the search relevance team.
+
+Software Engineering Intern, Razorpay -- Bangalore
+May 2024 -- Jul 2024
+- Developed REST APIs in Spring Boot and PostgreSQL for a new payments reconciliation service.
+- Added Redis-based idempotency keys to prevent duplicate transaction processing during retries.
+- Wrote unit and integration tests with JUnit, raising service coverage from 61% to 88%.
+- Containerized the service with Docker and set up a GitHub Actions CI/CD pipeline.
+
+PROJECTS
+RAG Chatbot for Course Notes | Python, LangChain, FAISS, FastAPI | https://github.com/ananyasharma/rag-notes-bot
+- Built a retrieval-augmented generation chatbot that answers questions over lecture PDFs using LangChain and FAISS.
+- Implemented chunking and embedding pipelines with Hugging Face sentence-transformers.
+- Exposed the assistant through a FastAPI backend with streaming responses.
+
+Distributed Task Scheduler | Go, Kubernetes, Redis | https://github.com/ananyasharma/task-scheduler
+- Implemented a distributed job scheduler with leader election and Redis-backed task queues.
+- Deployed the scheduler on Kubernetes with horizontal pod autoscaling under simulated load.
+
+Personal Finance Tracker | React, Node.js, Express, MongoDB | https://github.com/ananyasharma/finance-tracker | https://finance-tracker-demo.vercel.app
+- Built a full-stack expense tracker with React and a Node/Express REST API backed by MongoDB.
+- Added JWT-based authentication and Chart.js dashboards for monthly spending trends.
+
+CERTIFICATIONS
+AWS Certified Machine Learning -- Specialty, Amazon Web Services, 2025
+Deep Learning Specialization, DeepLearning.AI, 2024
+
+ACHIEVEMENTS
+Finalist, Smart India Hackathon 2024 (top 20 of 3,200 teams)
+1st place, IIT Roorkee Inter-College Coding Contest 2023
