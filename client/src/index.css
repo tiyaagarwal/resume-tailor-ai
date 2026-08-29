@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    background-color: #faf8f3;
+  }
+  body {
+    background-image: theme('backgroundImage.grain');
+  }
+  h1, h2, h3, h4 {
+    font-family: theme('fontFamily.display');
+    color: theme('colors.ink.DEFAULT');
+    letter-spacing: -0.01em;
+  }
+  ::selection {
+    background-color: theme('colors.seal.light');
+    color: theme('colors.ink.DEFAULT');
+  }
+  :focus-visible {
+    outline: 2px solid theme('colors.press.DEFAULT');
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .sheet {
+    background: #fff;
+    border: 1px solid theme('colors.line');
+    border-radius: 6px;
+    box-shadow: theme('boxShadow.sheet');
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold
+      transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-press text-white hover:bg-press-dark;
+  }
+  .btn-secondary {
+    @apply btn bg-transparent text-press border border-press/40 hover:bg-press/5;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-soft hover:bg-ink/5;
+  }
+  .btn-danger {
+    @apply btn bg-transparent text-deny border border-deny/30 hover:bg-deny/5;
+  }
+
+  .field-label {
+    @apply block text-xs font-mono uppercase tracking-wider text-ink-faint mb-1.5;
+  }
+
+  .tag {
+    @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-mono;
+  }
+  .tag-matched {
+    @apply tag border-approve/30 bg-approve/10 text-approve;
+  }
+  .tag-missing {
+    @apply tag border-deny/30 bg-deny/10 text-deny;
+  }
+  .tag-neutral {
+    @apply tag border-line bg-ink/5 text-ink-soft;
+  }
+
+  .stamp-pass {
+    @apply tag-matched font-semibold;
+  }
+  .stamp-fail {
+    @apply tag-missing font-semibold;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.line') transparent;
+  }
+}
