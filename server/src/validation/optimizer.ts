@@ -56,7 +56,9 @@ function step(layout: LayoutOptions, key: NumericLayoutKey, delta: number, floor
   return `Tightened ${key} to ${next}${unit}`;
 }
 
-const MOVES: Move[] = [
+/** Baseline stretch, spacing, margins, font — never touches content. This is
+ *  the full move list for `preserveContent` mode (see `optimizeToOnePage`). */
+const COSMETIC_MOVES: Move[] = [
   {
     name: 'reduce-baseline-stretch',
     apply: (_r, layout) => step(layout, 'baselineStretch', -0.02, MIN_LAYOUT.baselineStretch, ''),
@@ -95,9 +97,11 @@ const MOVES: Move[] = [
       return null;
     },
   },
+];
 
-  // Only past this line does anything touch CONTENT, and only in this order —
-  // never a JD-relevant Experience/Project bullet until the absolute last resort.
+/** Only reached in normal mode, never in `preserveContent` mode. Never a
+ *  JD-relevant Experience/Project bullet until the absolute last resort. */
+const CONTENT_MOVES: Move[] = [
   {
     name: 'remove-least-relevant-hackathon-or-workshop',
     apply: (r) => {
@@ -160,6 +164,8 @@ const MOVES: Move[] = [
   },
 ];
 
+const MOVES: Move[] = [...COSMETIC_MOVES, ...CONTENT_MOVES];
+
 export interface OptimizeResult {
   resume: TailoredResume;
   layout: LayoutOptions;
@@ -171,6 +177,15 @@ export interface OptimizeResult {
 
 const MAX_PASSES = 40;
 
+export interface OptimizeOptions {
+  /** Walks only COSMETIC_MOVES — no Workshop/Hackathon/Extra-Curricular/
+   *  Certificate/3rd-project/bullet cut is ever attempted. If cosmetics
+   *  alone can't reach one page, this returns honestly with `pageCount > 1`
+   *  rather than removing anything — used by the additive-regenerate flow,
+   *  where the user explicitly asked that nothing be removed. */
+  preserveContent?: boolean;
+}
+
 /**
  * Renders, checks the page count, and applies one optimisation at a time until
  * the PDF is exactly one page.
@@ -178,10 +193,12 @@ const MAX_PASSES = 40;
 export async function optimizeToOnePage(
   input: TailoredResume,
   startLayout: LayoutOptions = DEFAULT_LAYOUT,
+  opts: OptimizeOptions = {},
 ): Promise<OptimizeResult> {
   let resume = clone(input);
   const layout: LayoutOptions = { ...startLayout };
   const steps: OptimizationStep[] = [];
+  const moveList = opts.preserveContent ? COSMETIC_MOVES : MOVES;
 
   let latex = renderLatex(resume, layout);
   let { pdf } = await compileLatex(latex);
@@ -200,10 +217,10 @@ export async function optimizeToOnePage(
     const candidate = clone(resume);
     const candidateLayout = { ...layout };
 
-    while (moveIndex < MOVES.length) {
-      description = MOVES[moveIndex].apply(candidate, candidateLayout);
+    while (moveIndex < moveList.length) {
+      description = moveList[moveIndex].apply(candidate, candidateLayout);
       if (description) {
-        usedMove = MOVES[moveIndex].name;
+        usedMove = moveList[moveIndex].name;
         break;
       }
       moveIndex++;

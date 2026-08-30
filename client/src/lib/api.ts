@@ -1,4 +1,5 @@
 import type {
+  GapSuggestion,
   GenerationResult,
   HistoryEntry,
   JobDescription,
@@ -90,6 +91,27 @@ export const api = {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ hiddenSections }),
+    });
+  },
+  async critique(id: string): Promise<{ generation: GenerationResult }> {
+    return request(`/generations/${id}/critique`, { method: 'POST' });
+  },
+  async getGapSuggestions(id: string, masterResumeId: string): Promise<{ suggestions: GapSuggestion[] }> {
+    return request(`/generations/${id}/gap-suggestions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ masterResumeId }),
+    });
+  },
+  async regenerateAdditive(
+    id: string,
+    masterResumeId: string,
+    acceptedSuggestions: GapSuggestion[],
+  ): Promise<{ generation: GenerationResult }> {
+    return request(`/generations/${id}/regenerate-additive`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ masterResumeId, acceptedSuggestions }),
     });
   },
 

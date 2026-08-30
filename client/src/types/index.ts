@@ -304,6 +304,36 @@ export interface TruthfulnessResult {
   violations: string[];
 }
 
+export interface CritiqueImprovementArea {
+  id: string;
+  title: string;
+  detail: string;
+  keywords: string[];
+}
+
+export interface CritiqueResult {
+  /** Claude's own 0-100 assessment, distinct from the deterministic AtsScore. */
+  atsScore: number;
+  summary: string;
+  strengths: string[];
+  improvementAreas: CritiqueImprovementArea[];
+  createdAt: string;
+}
+
+export interface GapSuggestion {
+  id: string;
+  /** Which CritiqueImprovementArea this addresses. */
+  areaId: string;
+  kind: 'bullet' | 'skill' | 'project' | 'experience' | 'certification' | 'workshop' | 'hackathon' | 'extracurricular';
+  sourceId: string;
+  sourceParentId?: string;
+  /** The real, verbatim content — exactly what would be added, unchanged. */
+  text: string;
+  relevance: number;
+  /** True when this exact content is already present in the tailored resume. */
+  alreadyIncluded: boolean;
+}
+
 export interface GenerationResult {
   id: string;
   createdAt: string;
@@ -321,6 +351,8 @@ export interface GenerationResult {
   pdfPath: string;
   docxPath?: string;
   engine: 'claude' | 'heuristic';
+  /** Set once the user runs the critique step. */
+  critique?: CritiqueResult;
 }
 
 export interface HistoryEntry {

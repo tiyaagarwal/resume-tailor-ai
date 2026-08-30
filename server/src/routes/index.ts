@@ -7,7 +7,15 @@ import {
   uploadMasterResume,
 } from '../controllers/resumeController.ts';
 import { ingestJobDescription } from '../controllers/jdController.ts';
-import { generateHandler, optimizeHandler, regenerateHandler, toggleSectionsHandler } from '../controllers/generateController.ts';
+import {
+  critiqueHandler,
+  gapSuggestionsHandler,
+  generateHandler,
+  optimizeHandler,
+  regenerateAdditiveHandler,
+  regenerateHandler,
+  toggleSectionsHandler,
+} from '../controllers/generateController.ts';
 import {
   deleteGenerationHandler,
   downloadDocx,
@@ -39,6 +47,9 @@ router.post('/generate', asyncRoute(generateHandler));
 router.post('/generations/:id/regenerate', asyncRoute(regenerateHandler));
 router.post('/generations/:id/optimize', asyncRoute(optimizeHandler));
 router.patch('/generations/:id/sections', asyncRoute(toggleSectionsHandler));
+router.post('/generations/:id/critique', asyncRoute(critiqueHandler));
+router.post('/generations/:id/gap-suggestions', asyncRoute(gapSuggestionsHandler));
+router.post('/generations/:id/regenerate-additive', asyncRoute(regenerateAdditiveHandler));
 
 // ---- Resume History ----
 router.get('/history', asyncRoute(listHistory));

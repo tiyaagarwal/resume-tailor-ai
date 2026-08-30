@@ -7,6 +7,7 @@ import type {
   ResumeLinks,
   WorkshopEntry,
 } from './resume.ts';
+import type { CritiqueResult } from './critique.ts';
 
 /** Sections the renderer knows how to lay out, in this app's custom
  *  Overleaf-style format. 'summary' is intentionally not a member — it
@@ -171,4 +172,6 @@ export interface GenerationResult {
   latexSource: string;
   /** Whether the Claude API or the offline heuristic engine produced this. */
   engine: 'claude' | 'heuristic';
+  /** Set once the user runs the critique step (see ai/critique.ts). */
+  critique?: CritiqueResult;
 }

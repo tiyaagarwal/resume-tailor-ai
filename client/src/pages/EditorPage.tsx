@@ -5,6 +5,7 @@ import type { GenerationResult, SectionKey, TailoredBullet, TailoredResume } fro
 import PdfPreview from '../components/PdfPreview.tsx';
 import Spinner from '../components/Spinner.tsx';
 import ErrorBanner from '../components/ErrorBanner.tsx';
+import CritiquePanel from '../components/CritiquePanel.tsx';
 
 const SECTION_LABELS: Record<SectionKey, string> = {
   education: 'Education',
@@ -27,6 +28,11 @@ export default function EditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'saving' | 'optimizing' | 'regenerating' | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
+  // The additive-regenerate flow (via CritiquePanel) promises to never remove
+  // content, so if the result still overflows one page, the normal overflow
+  // banner's "Optimize to One Page" button — which cuts content — must not
+  // be offered for it.
+  const [lastUpdateWasAdditive, setLastUpdateWasAdditive] = useState(false);
 
   useEffect(() => {
     if (!generationId) return;
@@ -142,6 +148,7 @@ export default function EditorPage() {
       setGeneration(updated);
       setResume(updated.tailored);
       setPreviewKey((k) => k + 1);
+      setLastUpdateWasAdditive(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save your changes.');
     } finally {
@@ -158,11 +165,19 @@ export default function EditorPage() {
       setGeneration(updated);
       setResume(updated.tailored);
       setPreviewKey((k) => k + 1);
+      setLastUpdateWasAdditive(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not regenerate this resume.');
     } finally {
       setBusy(null);
     }
+  }
+
+  function handleCritiquePanelUpdate(updated: GenerationResult) {
+    setGeneration(updated);
+    setResume(updated.tailored);
+    setPreviewKey((k) => k + 1);
+    setLastUpdateWasAdditive(true);
   }
 
   const overflow = generation.pageCount > 1;
@@ -195,7 +210,7 @@ export default function EditorPage() {
         </div>
       )}
 
-      {overflow && (
+      {overflow && !lastUpdateWasAdditive && (
         <div className="mb-6 rounded-md border border-deny/30 bg-deny/5 px-4 py-3 flex items-center justify-between">
           <span className="text-sm text-deny font-medium">Resume exceeds one page ({generation.pageCount} pages).</span>
           <button className="btn-danger" onClick={saveAndOptimize} disabled={busy !== null}>
@@ -204,9 +219,20 @@ export default function EditorPage() {
         </div>
       )}
 
+      {overflow && lastUpdateWasAdditive && (
+        <div className="mb-6 rounded-md border border-line bg-ink/5 px-4 py-3">
+          <span className="text-sm text-ink-soft">
+            Everything was added — nothing was removed — but this now spans {generation.pageCount} pages. Trim
+            manually below if you need it back to one page.
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_420px] gap-8">
         {/* Left: editable content */}
         <div className="flex flex-col gap-5 scrollbar-thin">
+          <CritiquePanel generation={generation} onUpdated={handleCritiquePanelUpdate} />
+
           <section className="sheet p-5">
             <h2 className="font-display text-base font-semibold mb-3">Sections</h2>
             <div className="flex flex-wrap gap-2">

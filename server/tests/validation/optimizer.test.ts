@@ -154,6 +154,53 @@ Requirements
     expect(result.pageCount).toBe(1);
   });
 
+  it('preserveContent mode never removes anything — only cosmetic moves fire, even on a fixture that cannot reach one page', async () => {
+    const master = buildOverstuffedMaster();
+    const jd = analyzeJobDescription(`
+Senior Backend Engineer
+Company: Acme Corp
+Requirements
+- Python, React and PostgreSQL experience.
+- Docker and Kubernetes experience.
+`);
+    const index = buildJdIndex(jd);
+    const ranked = rankContent(master, jd, index);
+    const baseline = composeTailoredResume(master, jd, ranked);
+
+    const bulletCountBefore = [...baseline.experience, ...baseline.projects].reduce((n, g) => n + g.bullets.length, 0);
+    const workshopsBefore = baseline.workshops.length;
+    const hackathonsBefore = baseline.hackathons.length;
+    const certsBefore = baseline.certifications.length;
+    const projectsBefore = baseline.projects.length;
+
+    const result = await optimizeToOnePage(baseline, undefined, { preserveContent: true });
+
+    const COSMETIC_ONLY = new Set([
+      'reduce-baseline-stretch',
+      'tighten-project-entry-gap',
+      'tighten-experience-entry-gap',
+      'tighten-section-gap-before',
+      'tighten-section-gap-after',
+      'reduce-side-margins',
+      'reduce-topbottom-margins',
+      'reduce-font-size',
+    ]);
+    for (const step of result.steps) {
+      expect(COSMETIC_ONLY.has(step.action)).toBe(true);
+    }
+
+    const bulletCountAfter = [...result.resume.experience, ...result.resume.projects].reduce((n, g) => n + g.bullets.length, 0);
+    expect(bulletCountAfter).toBe(bulletCountBefore);
+    expect(result.resume.workshops.length).toBe(workshopsBefore);
+    expect(result.resume.hackathons.length).toBe(hackathonsBefore);
+    expect(result.resume.certifications.length).toBe(certsBefore);
+    expect(result.resume.projects.length).toBe(projectsBefore);
+    // This fixture is deliberately too overstuffed to fit on one page via
+    // cosmetics alone — that's the point: it must report honestly rather
+    // than fall back to a content cut.
+    expect(result.pageCount).toBeGreaterThan(1);
+  });
+
   it('never drops the pinned, evidence-derived DSA-practice Extra Curricular line', async () => {
     const master = buildOverstuffedMaster();
     const jd = analyzeJobDescription(`
