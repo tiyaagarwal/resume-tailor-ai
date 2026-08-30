@@ -81,8 +81,8 @@ export default function HomePage() {
         </h1>
         <p className="text-ink-soft leading-relaxed">
           Upload your full resume once. For every job description, ResumeTailor AI ranks what's actually
-          relevant, rewrites it for clarity, and typesets it into a one-page, ATS-friendly resume in Jake's
-          Resume format — never inventing a skill, a metric, or a line of experience you don't have.
+          relevant, rewrites it for clarity, and typesets it into a one-page, ATS-friendly resume — never
+          inventing a skill, a metric, or a line of experience you don't have.
         </p>
       </div>
 
@@ -111,13 +111,16 @@ export default function HomePage() {
               <p className="text-sm font-medium text-approve mb-2">
                 Parsed {preview.fullName ? `— ${preview.fullName}` : ''}
               </p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono text-ink-soft">
+              <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono text-ink-soft">
                 <span>{preview.sectionsFound.experience} experience</span>
                 <span>{preview.sectionsFound.internships} internships</span>
                 <span>{preview.sectionsFound.projects} projects</span>
                 <span>{preview.sectionsFound.education} education</span>
                 <span>{preview.sectionsFound.skills} skills</span>
                 <span>{preview.sectionsFound.links} links</span>
+                <span>{preview.sectionsFound.certifications} certifications</span>
+                <span>{preview.sectionsFound.workshops} workshops</span>
+                <span>{preview.sectionsFound.hackathons} hackathons</span>
               </div>
             </div>
           )}

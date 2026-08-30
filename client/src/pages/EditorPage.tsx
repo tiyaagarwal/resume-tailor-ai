@@ -7,17 +7,18 @@ import Spinner from '../components/Spinner.tsx';
 import ErrorBanner from '../components/ErrorBanner.tsx';
 
 const SECTION_LABELS: Record<SectionKey, string> = {
-  summary: 'Summary',
   education: 'Education',
+  skills: 'Skills',
   experience: 'Experience',
-  internship: 'Internships',
   projects: 'Projects',
-  skills: 'Technical Skills',
+  workshops: 'Workshops',
+  hackathons: 'Hackathons',
   certifications: 'Certifications',
-  achievements: 'Achievements',
+  extracurricular: 'Extra Curricular',
 };
 
-type BulletOwner = 'experience' | 'internships' | 'projects';
+type BulletOwner = 'experience' | 'projects';
+type ListSection = 'workshops' | 'hackathons' | 'certifications' | 'extraCurricular';
 
 export default function EditorPage() {
   const { generationId } = useParams<{ generationId: string }>();
@@ -65,9 +66,9 @@ export default function EditorPage() {
   const updateBullet = (owner: BulletOwner, groupId: string, bulletIndex: number, patch: Partial<TailoredBullet>) => {
     setResume((r) => {
       if (!r) return r;
-      const groups = r[owner].map((g: any) =>
+      const groups = r[owner].map((g) =>
         g.id === groupId
-          ? { ...g, bullets: g.bullets.map((b: TailoredBullet, i: number) => (i === bulletIndex ? { ...b, ...patch } : b)) }
+          ? { ...g, bullets: g.bullets.map((b, i) => (i === bulletIndex ? { ...b, ...patch } : b)) }
           : g,
       );
       return { ...r, [owner]: groups };
@@ -77,10 +78,58 @@ export default function EditorPage() {
   const removeBullet = (owner: BulletOwner, groupId: string, bulletIndex: number) => {
     setResume((r) => {
       if (!r) return r;
-      const groups = r[owner].map((g: any) =>
-        g.id === groupId ? { ...g, bullets: g.bullets.filter((_: TailoredBullet, i: number) => i !== bulletIndex) } : g,
+      const groups = r[owner].map((g) =>
+        g.id === groupId ? { ...g, bullets: g.bullets.filter((_, i) => i !== bulletIndex) } : g,
       );
       return { ...r, [owner]: groups };
+    });
+  };
+
+  const updateEntry = <K extends ListSection>(section: K, id: string, patch: Partial<TailoredResume[K][number]>) => {
+    setResume((r) => {
+      if (!r) return r;
+      const list = r[section].map((e) => (e.id === id ? { ...e, ...patch } : e));
+      return { ...r, [section]: list };
+    });
+  };
+
+  const removeEntry = (section: ListSection, id: string) => {
+    setResume((r) => {
+      if (!r) return r;
+      const list = r[section].filter((e) => e.id !== id);
+      return { ...r, [section]: list };
+    });
+  };
+
+  const updateSkillItems = (name: string, itemsText: string) => {
+    setResume((r) => {
+      if (!r) return r;
+      const skills = r.skills.map((c) =>
+        c.name === name ? { ...c, items: itemsText.split(',').map((s) => s.trim()).filter(Boolean) } : c,
+      );
+      return { ...r, skills };
+    });
+  };
+
+  const acceptFabricatedSkill = (name: string, skill: string) => {
+    setResume((r) => {
+      if (!r) return r;
+      const skills = r.skills.map((c) =>
+        c.name === name
+          ? { ...c, items: [...c.items, skill], fabricated: (c.fabricated ?? []).filter((f) => f !== skill) }
+          : c,
+      );
+      return { ...r, skills };
+    });
+  };
+
+  const rejectFabricatedSkill = (name: string, skill: string) => {
+    setResume((r) => {
+      if (!r) return r;
+      const skills = r.skills.map((c) =>
+        c.name === name ? { ...c, fabricated: (c.fabricated ?? []).filter((f) => f !== skill) } : c,
+      );
+      return { ...r, skills };
     });
   };
 
@@ -181,32 +230,143 @@ export default function EditorPage() {
             <textarea
               value={resume.summary}
               onChange={(e) => setResume((r) => (r ? { ...r, summary: e.target.value } : r))}
-              placeholder="A one-to-two sentence professional summary…"
+              placeholder="A two-to-three sentence professional summary…"
               className="w-full min-h-[70px] resize-y rounded-md border border-line bg-white px-3 py-2 text-sm"
             />
           </section>
 
           {resume.experience.length > 0 && (
-            <ExperienceGroup title="Experience" owner="experience" items={resume.experience} updateBullet={updateBullet} removeBullet={removeBullet} />
-          )}
-          {resume.internships.length > 0 && (
-            <ExperienceGroup title="Internships" owner="internships" items={resume.internships} updateBullet={updateBullet} removeBullet={removeBullet} />
+            <ExperienceGroup
+              title="Experience"
+              owner="experience"
+              items={resume.experience}
+              updateBullet={updateBullet}
+              removeBullet={removeBullet}
+            />
           )}
           {resume.projects.length > 0 && (
-            <ExperienceGroup title="Projects" owner="projects" items={resume.projects} updateBullet={updateBullet} removeBullet={removeBullet} />
+            <ExperienceGroup
+              title="Projects"
+              owner="projects"
+              items={resume.projects}
+              updateBullet={updateBullet}
+              removeBullet={removeBullet}
+            />
           )}
 
           <section className="sheet p-5">
-            <h2 className="font-display text-base font-semibold mb-3">Technical Skills</h2>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {(Object.keys(resume.skills) as (keyof typeof resume.skills)[]).map((cat) => (
-                <div key={cat}>
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-ink-faint mb-1">{cat}</p>
-                  <p className="text-ink-soft">{resume.skills[cat].join(', ') || '—'}</p>
+            <h2 className="font-display text-base font-semibold mb-3">Skills</h2>
+            <div className="flex flex-col gap-4 text-sm">
+              {resume.skills.map((cat) => (
+                <div key={cat.name}>
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-ink-faint mb-1">{cat.name}</p>
+                  <textarea
+                    value={cat.items.join(', ')}
+                    onChange={(e) => updateSkillItems(cat.name, e.target.value)}
+                    placeholder="Comma-separated skills…"
+                    rows={2}
+                    className="w-full resize-y rounded-md border border-line bg-white px-2.5 py-1.5 text-sm"
+                  />
+                  {cat.fabricated && cat.fabricated.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {cat.fabricated.map((skill) => (
+                        <span
+                          key={skill}
+                          title="Suggested from the job description — not verified against your resume"
+                          className="tag tag-neutral inline-flex items-center gap-1.5"
+                        >
+                          {skill}
+                          <button
+                            title="Add to your skills"
+                            onClick={() => acceptFabricatedSkill(cat.name, skill)}
+                            className="text-seal hover:underline"
+                          >
+                            +
+                          </button>
+                          <button
+                            title="Dismiss suggestion"
+                            onClick={() => rejectFabricatedSkill(cat.name, skill)}
+                            className="text-ink-faint hover:text-deny"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </section>
+
+          {resume.workshops.length > 0 && (
+            <section className="sheet p-5">
+              <h2 className="font-display text-base font-semibold mb-4">Workshops</h2>
+              <div className="flex flex-col gap-3">
+                {resume.workshops.map((w) => (
+                  <SimpleEntryRow
+                    key={w.id}
+                    primaryValue={w.title}
+                    subtitle={[w.organizer, w.date].filter(Boolean).join(' — ')}
+                    onChangePrimary={(text) => updateEntry('workshops', w.id, { title: text })}
+                    onRemove={() => removeEntry('workshops', w.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {resume.hackathons.length > 0 && (
+            <section className="sheet p-5">
+              <h2 className="font-display text-base font-semibold mb-4">Hackathons</h2>
+              <div className="flex flex-col gap-3">
+                {resume.hackathons.map((h) => (
+                  <SimpleEntryRow
+                    key={h.id}
+                    primaryValue={h.name}
+                    subtitle={[h.result, h.date].filter(Boolean).join(' — ')}
+                    onChangePrimary={(text) => updateEntry('hackathons', h.id, { name: text })}
+                    onRemove={() => removeEntry('hackathons', h.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {resume.certifications.length > 0 && (
+            <section className="sheet p-5">
+              <h2 className="font-display text-base font-semibold mb-4">Certifications</h2>
+              <div className="flex flex-col gap-3">
+                {resume.certifications.map((c) => (
+                  <SimpleEntryRow
+                    key={c.id}
+                    primaryValue={c.name}
+                    subtitle={[c.issuer, c.date].filter(Boolean).join(' — ')}
+                    onChangePrimary={(text) => updateEntry('certifications', c.id, { name: text })}
+                    onRemove={() => removeEntry('certifications', c.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {resume.extraCurricular.length > 0 && (
+            <section className="sheet p-5">
+              <h2 className="font-display text-base font-semibold mb-4">Extra Curricular</h2>
+              <div className="flex flex-col gap-3">
+                {resume.extraCurricular.map((e) => (
+                  <SimpleEntryRow
+                    key={e.id}
+                    primaryValue={e.impact}
+                    subtitle={[e.role, e.organization].filter(Boolean).join(' — ')}
+                    pinned={e.pinned}
+                    onChangePrimary={(text) => updateEntry('extraCurricular', e.id, { impact: text })}
+                    onRemove={() => removeEntry('extraCurricular', e.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Right: live preview */}
@@ -225,6 +385,50 @@ export default function EditorPage() {
   );
 }
 
+/** Shared row for the light-weight entry types (Workshops/Hackathons/
+ *  Certifications/Extra Curricular) — an editable primary text field, a
+ *  read-only subtitle, and a remove button (hidden for a pinned entry, e.g.
+ *  the evidence-derived DSA-practice line, which the editor never removes). */
+function SimpleEntryRow({
+  primaryValue,
+  subtitle,
+  pinned,
+  onChangePrimary,
+  onRemove,
+}: {
+  primaryValue: string;
+  subtitle: string;
+  pinned?: boolean;
+  onChangePrimary: (text: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex-1">
+        <input
+          value={primaryValue}
+          onChange={(e) => onChangePrimary(e.target.value)}
+          className="w-full rounded-md border border-line bg-white px-2 py-1 text-sm font-semibold text-ink"
+        />
+        {subtitle && <p className="mt-1 text-xs text-ink-faint">{subtitle}</p>}
+      </div>
+      {pinned ? (
+        <span className="text-xs font-mono px-1.5 py-0.5 rounded border border-seal text-seal bg-seal/10" title="Always kept — evidence-derived">
+          pinned
+        </span>
+      ) : (
+        <button
+          title="Remove"
+          onClick={onRemove}
+          className="text-xs font-mono px-1.5 py-0.5 rounded border border-line text-ink-faint hover:border-deny hover:text-deny"
+        >
+          remove
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ExperienceGroup({
   title,
   owner,
@@ -234,7 +438,15 @@ function ExperienceGroup({
 }: {
   title: string;
   owner: BulletOwner;
-  items: Array<{ id: string; bullets: TailoredBullet[]; [key: string]: any }>;
+  items: Array<{
+    id: string;
+    role?: string;
+    name?: string;
+    organization?: string;
+    kind?: 'experience' | 'internship';
+    certificateUrl?: string;
+    bullets: TailoredBullet[];
+  }>;
   updateBullet: (owner: BulletOwner, groupId: string, bulletIndex: number, patch: Partial<TailoredBullet>) => void;
   removeBullet: (owner: BulletOwner, groupId: string, bulletIndex: number) => void;
 }) {
@@ -244,10 +456,22 @@ function ExperienceGroup({
       <div className="flex flex-col gap-5">
         {items.map((item) => (
           <div key={item.id}>
-            <p className="text-sm font-semibold text-ink">{item.role ?? item.name}</p>
-            {item.organization && <p className="text-xs text-ink-faint">{item.organization}</p>}
+            <p className="text-sm font-semibold text-ink flex items-center gap-2">
+              {item.role ?? item.name}
+              {item.kind === 'internship' && <span className="tag tag-neutral text-[10px] py-0">Internship</span>}
+            </p>
+            {(item.organization || item.certificateUrl) && (
+              <p className="text-xs text-ink-faint flex items-center gap-2">
+                {item.organization}
+                {item.certificateUrl && (
+                  <a href={item.certificateUrl} target="_blank" rel="noreferrer" className="text-seal hover:underline">
+                    Certificate ↗
+                  </a>
+                )}
+              </p>
+            )}
             <div className="mt-2 flex flex-col gap-2">
-              {item.bullets.map((b: TailoredBullet, i: number) => (
+              {item.bullets.map((b, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <textarea
                     value={b.text}

@@ -70,7 +70,7 @@ ACHIEVEMENTS
 Speaker at RegionalConf 2023 on distributed systems.
 Published an internal engineering blog post read by 5,000+ engineers.
 Mentored 8 junior engineers over two years.
-Solved 250+ DSA problems across arrays, linked lists, trees, graphs, and dynamic programming.
+Solved 250+ DSA problems: arrays, linked lists, trees, graphs, and dynamic programming.
 
 EXTRA CURRICULAR
 Club President — Engineering Society — Organized monthly tech talks for 200+ members.

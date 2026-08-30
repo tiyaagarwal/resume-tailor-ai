@@ -24,9 +24,14 @@ export function detectDsaPracticeSignal(rawText: string): DsaSignal | null {
   // near the word "problems" (e.g. a year).
   if (!Number.isFinite(count) || count < 10 || count > 100000) return null;
 
+  // Only treat what follows as a topic list when it's actually introduced as
+  // one (e.g. "...problems solved: arrays, linked lists, trees") — otherwise
+  // an unrelated trailing phrase (e.g. "...problems on LeetCode; rating
+  // 1783") would get misread as a topic list, producing awkward text like
+  // "across on LeetCode."
   const tailStart = (m.index ?? 0) + m[0].length;
   const tail = rawText.slice(tailStart, tailStart + 140);
-  const topicsMatch = /^[\s:.-]*([a-zA-Z][a-zA-Z ,&/]{3,100})/.exec(tail);
+  const topicsMatch = /^\s*:\s*([a-zA-Z][a-zA-Z ,&/]{3,100})/.exec(tail);
   const topics = topicsMatch ? topicsMatch[1].split(/[.\n]/)[0].trim() : undefined;
 
   return { count, topics: topics && topics.length < 100 ? topics : undefined };

@@ -40,7 +40,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <footer className="border-t border-line py-6">
         <div className="mx-auto max-w-6xl px-6 text-xs font-mono text-ink-faint flex items-center justify-between">
           <span>ResumeTailor AI — every fact traces back to your master resume.</span>
-          <span>Jake&apos;s Resume format · one page, always</span>
+          <span>Always exactly one page</span>
         </div>
       </footer>
     </div>

@@ -29,13 +29,81 @@ export interface EducationEntry {
   coursework?: string[];
 }
 
-export interface SkillCategories {
-  languages: string[];
-  frameworks: string[];
-  libraries: string[];
-  tools: string[];
+export interface SkillCategory {
+  name: string;
+  items: string[];
+}
+export type Skills = SkillCategory[];
+
+export interface ExperienceEntry {
+  id: string;
+  kind: 'experience' | 'internship';
+  role: string;
+  organization: string;
+  location?: string;
+  startDate?: string;
+  endDate?: string;
+  bullets: string[];
   technologies: string[];
-  other: string[];
+  certificateUrl?: string;
+}
+
+export interface ProjectEntry {
+  id: string;
+  name: string;
+  tagline?: string;
+  bullets: string[];
+  technologies: string[];
+  repoUrl?: string;
+  liveUrl?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface CertificationEntry {
+  id: string;
+  name: string;
+  issuer?: string;
+  date?: string;
+  url?: string;
+}
+
+export interface AchievementEntry {
+  id: string;
+  text: string;
+  date?: string;
+  url?: string;
+}
+
+export interface WorkshopEntry {
+  id: string;
+  title: string;
+  organizer?: string;
+  date?: string;
+  url?: string;
+  description?: string;
+}
+
+export interface HackathonEntry {
+  id: string;
+  name: string;
+  result?: string;
+  date?: string;
+  url?: string;
+  description?: string;
+  technologies?: string[];
+}
+
+export interface ExtraCurricularEntry {
+  id: string;
+  /** Empty when this entry was folded in from a master-resume Achievement. */
+  role: string;
+  organization?: string;
+  impact: string;
+  date?: string;
+  /** True for the synthesized, evidence-derived DSA-practice line — never
+   *  removable in the editor. */
+  pinned?: boolean;
 }
 
 export interface MasterResumeSummary {
@@ -53,12 +121,18 @@ export interface MasterResume {
   links: ResumeLinks;
   summary: string;
   education: EducationEntry[];
-  skills: SkillCategories;
-  experience: unknown[];
-  internships: unknown[];
-  projects: unknown[];
-  certifications: unknown[];
-  achievements: unknown[];
+  skills: Skills;
+  experience: ExperienceEntry[];
+  internships: ExperienceEntry[];
+  projects: ProjectEntry[];
+  certifications: CertificationEntry[];
+  achievements: AchievementEntry[];
+  workshops: WorkshopEntry[];
+  hackathons: HackathonEntry[];
+  extraCurricular: ExtraCurricularEntry[];
+  /** An existing, evidence-based DSA-practice claim found in the resume's
+   *  own text. Never fabricated — absent when the resume makes no such claim. */
+  dsaSignal?: { count: number; topics?: string };
 }
 
 export interface UploadPreview {
@@ -71,6 +145,9 @@ export interface UploadPreview {
     projects: number;
     certifications: number;
     achievements: number;
+    workshops: number;
+    hackathons: number;
+    extraCurricular: number;
     skills: number;
     links: number;
   };
@@ -95,15 +172,20 @@ export interface JobDescription {
   domainTerminology: string[];
 }
 
+/** The custom LaTeX/Overleaf template's fixed section set. 'summary' is
+ *  intentionally not a member — it renders unconditionally below the header,
+ *  not through the section-toggle list. Internships render together with
+ *  Experience (distinguished by each entry's `kind`); Achievements fold into
+ *  Extra Curricular. */
 export type SectionKey =
-  | 'summary'
   | 'education'
-  | 'experience'
-  | 'internship'
-  | 'projects'
   | 'skills'
+  | 'experience'
+  | 'projects'
+  | 'workshops'
+  | 'hackathons'
   | 'certifications'
-  | 'achievements';
+  | 'extracurricular';
 
 export interface TailoredBullet {
   text: string;
@@ -124,11 +206,13 @@ export interface TailoredExperience {
   endDate?: string;
   bullets: TailoredBullet[];
   relevance: number;
+  certificateUrl?: string;
 }
 
 export interface TailoredProject {
   id: string;
   name: string;
+  tagline?: string;
   technologies: string[];
   bullets: TailoredBullet[];
   repoUrl?: string;
@@ -136,6 +220,15 @@ export interface TailoredProject {
   startDate?: string;
   endDate?: string;
   relevance: number;
+}
+
+export interface TailoredSkillCategory {
+  name: string;
+  items: string[];
+  /** JD-derived keywords with zero master-resume evidence — the one place
+   *  this app allows an unbacked claim, per an explicit truthfulness-guard
+   *  override scoped to Skills only. Never populated for 'Core CS'. */
+  fabricated?: string[];
 }
 
 export interface TailoredResume {
@@ -147,12 +240,17 @@ export interface TailoredResume {
   sectionOrder: SectionKey[];
   hiddenSections: SectionKey[];
   education: EducationEntry[];
-  skills: SkillCategories;
+  skills: TailoredSkillCategory[];
+  /** Experience and internships merged into one relevance/recency-sorted
+   *  array; entries stay `kind`-tagged. */
   experience: TailoredExperience[];
-  internships: TailoredExperience[];
   projects: TailoredProject[];
-  certifications: { id: string; name: string; issuer?: string; date?: string; url?: string }[];
-  achievements: { id: string; text: string; date?: string; url?: string }[];
+  workshops: WorkshopEntry[];
+  hackathons: HackathonEntry[];
+  certifications: CertificationEntry[];
+  /** Ranked achievements are folded in here (role: '') alongside genuine
+   *  extra-curricular entries and the pinned DSA-practice line. */
+  extraCurricular: ExtraCurricularEntry[];
 }
 
 export interface AtsScore {
@@ -170,7 +268,15 @@ export interface AtsScore {
 export interface SelectionReason {
   itemId: string;
   itemLabel: string;
-  kind: 'experience' | 'internship' | 'project' | 'skill' | 'certification' | 'achievement';
+  kind:
+    | 'experience'
+    | 'internship'
+    | 'project'
+    | 'skill'
+    | 'certification'
+    | 'workshop'
+    | 'hackathon'
+    | 'extracurricular';
   relevance: number;
   matchedTerms: string[];
   included: boolean;
