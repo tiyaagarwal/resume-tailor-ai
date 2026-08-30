@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+data/
+.git
+.env
+*.env
+server/tests
+server/scripts
+client/public/vite.svg
