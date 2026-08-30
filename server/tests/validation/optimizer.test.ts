@@ -58,10 +58,22 @@ AWS Certified Solutions Architect, Amazon, 2023
 Certified Kubernetes Administrator, CNCF, 2022
 Google Cloud Professional Engineer, Google, 2021
 
+WORKSHOPS
+Advanced Distributed Systems Workshop, LinuxFoundation, 2022
+Cloud Security Bootcamp, SANS, 2021
+
+HACKATHONS
+RegionalHacks 2023, Winner
+CityCodeJam 2022, Finalist
+
 ACHIEVEMENTS
 Speaker at RegionalConf 2023 on distributed systems.
 Published an internal engineering blog post read by 5,000+ engineers.
 Mentored 8 junior engineers over two years.
+Solved 250+ DSA problems across arrays, linked lists, trees, graphs, and dynamic programming.
+
+EXTRA CURRICULAR
+Club President — Engineering Society — Organized monthly tech talks for 200+ members.
 `.trim();
 
   return structureResume({
@@ -70,6 +82,7 @@ Mentored 8 junior engineers over two years.
     links: [
       { label: 'LinkedIn', url: 'https://linkedin.com/in/jordanlee' },
       { label: 'GitHub', url: 'https://github.com/jordanlee' },
+      { label: 'Certificate', url: 'https://globex.example.com/certificate/jordanlee', context: 'Software Engineer | Globex | Remote' },
     ],
   });
 }
@@ -98,6 +111,64 @@ Requirements
 
     const recheck = await getPageCount(result.pdf);
     expect(recheck).toBe(1);
+  });
+
+  it('exhausts every cosmetic compression move before cutting any content, and never cuts an Experience/Project bullet except as the absolute last resort', async () => {
+    const master = buildOverstuffedMaster();
+    const jd = analyzeJobDescription(`
+Senior Backend Engineer
+Company: Acme Corp
+Requirements
+- Python, React and PostgreSQL experience.
+- Docker and Kubernetes experience.
+`);
+    const index = buildJdIndex(jd);
+    const ranked = rankContent(master, jd, index);
+    const baseline = composeTailoredResume(master, jd, ranked);
+    const result = await optimizeToOnePage(baseline);
+
+    // Mirrors the exact priority order declared in validation/optimizer.ts's
+    // MOVES list — cosmetic moves first, content cuts last, bullet removal
+    // as the absolute final resort. The step log's actions must never
+    // regress to an earlier-priority move once a later one has fired.
+    const PRIORITY_ORDER = [
+      'reduce-baseline-stretch',
+      'tighten-project-entry-gap',
+      'tighten-experience-entry-gap',
+      'tighten-section-gap-before',
+      'tighten-section-gap-after',
+      'reduce-side-margins',
+      'reduce-topbottom-margins',
+      'reduce-font-size',
+      'remove-least-relevant-hackathon-or-workshop',
+      'remove-least-relevant-extracurricular-non-pinned',
+      'trim-certifications',
+      'drop-third-project',
+      'remove-experience-bullet-floor',
+    ];
+    const ranks = result.steps.map((s) => PRIORITY_ORDER.indexOf(s.action));
+    expect(ranks.every((r) => r >= 0)).toBe(true);
+    for (let i = 1; i < ranks.length; i++) {
+      expect(ranks[i]).toBeGreaterThanOrEqual(ranks[i - 1]);
+    }
+    expect(result.pageCount).toBe(1);
+  });
+
+  it('never drops the pinned, evidence-derived DSA-practice Extra Curricular line', async () => {
+    const master = buildOverstuffedMaster();
+    const jd = analyzeJobDescription(`
+Senior Backend Engineer
+Company: Acme Corp
+Requirements
+- Python, React and PostgreSQL experience.
+`);
+    const index = buildJdIndex(jd);
+    const ranked = rankContent(master, jd, index);
+    const baseline = composeTailoredResume(master, jd, ranked);
+    expect(baseline.extraCurricular.some((e) => e.pinned)).toBe(true);
+
+    const result = await optimizeToOnePage(baseline);
+    expect(result.resume.extraCurricular.some((e) => e.pinned)).toBe(true);
   });
 
   it('every expected hyperlink is a real, valid PDF annotation after optimization', async () => {

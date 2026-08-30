@@ -48,7 +48,6 @@ function applyLocks(baseline: TailoredResume, preserve: GenerateOptions['preserv
     ...baseline,
     hiddenSections: preserve.hiddenSections,
     experience: lockGroup(baseline.experience),
-    internships: lockGroup(baseline.internships),
     projects: lockGroup(baseline.projects),
   };
 }

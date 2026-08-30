@@ -8,15 +8,29 @@ import { getPageCount } from './pdf.ts';
 const log = logger('optimizer');
 
 /**
- * Automatic one-page enforcement.
+ * Automatic one-page enforcement for this app's custom template.
  *
- * Content decisions come first and cosmetic ones last, so the resume loses its
- * least relevant material before it loses readability. Font and margin changes
- * are the final resort and are bounded — shrinking text until it fits would
- * produce a technically one-page resume that no recruiter can read.
+ * Unlike a "content before cosmetics" template, this one is deliberately the
+ * other way around: cosmetic compression (baseline stretch, entry/section
+ * spacing, margins, font) always exhausts BEFORE anything on the page is
+ * removed. Even then, only a Workshop/Hackathon, then a non-pinned Extra
+ * Curricular entry, then a Certificate, then a 3rd project are cut — never
+ * an Experience/Project bullet, except as the absolute last resort below,
+ * which is loudly logged since reaching it means every other move failed.
  */
 
-const MIN_LAYOUT = { fontSize: 10 as const, marginInches: 0.4, sectionSpacing: 2, itemSpacing: 0 };
+const MIN_LAYOUT: LayoutOptions = {
+  fontSize: 10,
+  marginSidesIn: 0.45,
+  marginTopBottomIn: 0.35,
+  baselineStretch: 0.8,
+  sectionGapBeforePt: 3,
+  sectionGapAfterPt: 1,
+  projectEntryGapPt: 2,
+  experienceEntryGapPt: 2,
+};
+
+const MIN_PROJECTS = 2;
 
 interface Move {
   name: string;
@@ -26,136 +40,50 @@ interface Move {
 
 const clone = (r: TailoredResume): TailoredResume => structuredClone(r);
 
-/** Wordy phrasings that carry no information. Purely subtractive. */
-const REDUNDANT_PHRASES: Array<[RegExp, string]> = [
-  [/\bin order to\b/gi, 'to'],
-  [/\bwas responsible for\b/gi, ''],
-  [/\bresponsible for\b/gi, ''],
-  [/\bwith the goal of\b/gi, 'to'],
-  [/\bfor the purpose of\b/gi, 'for'],
-  [/\bin an effort to\b/gi, 'to'],
-  [/\ba variety of\b/gi, 'various'],
-  [/\bhelped to\b/gi, 'helped'],
-  [/\bworked on\b/gi, 'built'],
-  [/\bmade use of\b/gi, 'used'],
-  [/\butili[sz]ed\b/gi, 'used'],
-  [/\bsuccessfully\b/gi, ''],
-  [/\bvery\b/gi, ''],
-  [/\bthat (was|were|is|are)\b/gi, ''],
-  [/\s+which\s+/gi, ' '],
-];
-
-export function condenseBullet(text: string): string {
-  let out = text;
-  for (const [re, rep] of REDUNDANT_PHRASES) out = out.replace(re, rep);
-  return out.replace(/\s{2,}/g, ' ').replace(/\s+([,.])/g, '$1').trim();
+/** All bullet-bearing items — used only by the last-resort move below. */
+function bulletGroups(r: TailoredResume) {
+  return [...r.experience, ...r.projects];
 }
 
-/** All bullet-bearing items, so moves can treat them uniformly. */
-function bulletGroups(r: TailoredResume) {
-  return [...r.experience, ...r.internships, ...r.projects];
+type NumericLayoutKey = Exclude<keyof LayoutOptions, 'fontSize'>;
+
+function step(layout: LayoutOptions, key: NumericLayoutKey, delta: number, floor: number, unit: string): string | null {
+  const current = layout[key];
+  if (current <= floor) return null;
+  const next = Math.max(floor, Math.round((current + delta) * 100) / 100);
+  if (next === current) return null;
+  layout[key] = next;
+  return `Tightened ${key} to ${next}${unit}`;
 }
 
 const MOVES: Move[] = [
   {
-    name: 'remove-least-relevant-bullet',
-    apply: (r) => {
-      // Bullets are stored in descending relevance, so the last bullet of the
-      // item with the most bullets is the cheapest thing on the page.
-      const candidates = bulletGroups(r).filter(
-        (g) => g.bullets.filter((b) => !b.locked).length > 1,
-      );
-      if (candidates.length === 0) return null;
-      candidates.sort((a, b) => b.bullets.length - a.bullets.length);
-      const target = candidates[0];
-      for (let i = target.bullets.length - 1; i >= 0; i--) {
-        if (!target.bullets[i].locked) {
-          const [removed] = target.bullets.splice(i, 1);
-          const label = 'role' in target ? (target as { role: string }).role : (target as { name: string }).name;
-          return `Removed the lowest-relevance bullet from "${label}": "${removed.text.slice(0, 60)}…"`;
-        }
-      }
-      return null;
-    },
+    name: 'reduce-baseline-stretch',
+    apply: (_r, layout) => step(layout, 'baselineStretch', -0.02, MIN_LAYOUT.baselineStretch, ''),
   },
   {
-    name: 'condense-wording',
-    apply: (r) => {
-      let changed = 0;
-      for (const g of bulletGroups(r)) {
-        for (const b of g.bullets) {
-          if (b.locked) continue;
-          const next = condenseBullet(b.text);
-          if (next !== b.text && next.length > 20) {
-            b.text = next;
-            changed++;
-          }
-        }
-      }
-      return changed > 0 ? `Removed redundant wording from ${changed} bullet(s)` : null;
-    },
+    name: 'tighten-project-entry-gap',
+    apply: (_r, layout) => step(layout, 'projectEntryGapPt', -1, MIN_LAYOUT.projectEntryGapPt, 'pt'),
   },
   {
-    name: 'trim-skills',
-    apply: (r) => {
-      // Skill lists are relevance-ordered; drop from the tail.
-      const cats = ['other', 'technologies', 'libraries', 'tools', 'frameworks', 'languages'] as const;
-      for (const c of cats) {
-        if (r.skills[c].length > 4) {
-          const dropped = r.skills[c].pop();
-          return `Removed the least relevant skill "${dropped}" from ${c}`;
-        }
-      }
-      return null;
-    },
+    name: 'tighten-experience-entry-gap',
+    apply: (_r, layout) => step(layout, 'experienceEntryGapPt', -1, MIN_LAYOUT.experienceEntryGapPt, 'pt'),
   },
   {
-    name: 'trim-achievements',
-    apply: (r) => {
-      if (r.achievements.length === 0) return null;
-      const dropped = r.achievements.pop();
-      return `Removed a lower-priority achievement: "${dropped?.text.slice(0, 50)}…"`;
-    },
+    name: 'tighten-section-gap-before',
+    apply: (_r, layout) => step(layout, 'sectionGapBeforePt', -1, MIN_LAYOUT.sectionGapBeforePt, 'pt'),
   },
   {
-    name: 'trim-certifications',
-    apply: (r) => {
-      if (r.certifications.length <= 1) return null;
-      const dropped = r.certifications.pop();
-      return `Removed a lower-priority certification: "${dropped?.name}"`;
-    },
+    name: 'tighten-section-gap-after',
+    apply: (_r, layout) => step(layout, 'sectionGapAfterPt', -1, MIN_LAYOUT.sectionGapAfterPt, 'pt'),
   },
   {
-    name: 'remove-least-relevant-project',
-    apply: (r) => {
-      if (r.projects.length <= 1) return null;
-      const dropped = r.projects.pop();
-      return `Removed the least relevant project "${dropped?.name}" to fit one page`;
-    },
+    name: 'reduce-side-margins',
+    apply: (_r, layout) => step(layout, 'marginSidesIn', -0.02, MIN_LAYOUT.marginSidesIn, 'in'),
   },
   {
-    name: 'tighten-spacing',
-    apply: (_r, layout) => {
-      if (layout.sectionSpacing > MIN_LAYOUT.sectionSpacing) {
-        layout.sectionSpacing -= 2;
-        return `Tightened section spacing to ${layout.sectionSpacing}pt`;
-      }
-      if (layout.itemSpacing > MIN_LAYOUT.itemSpacing) {
-        layout.itemSpacing -= 1;
-        return `Tightened bullet spacing to ${layout.itemSpacing}pt`;
-      }
-      return null;
-    },
-  },
-  {
-    name: 'reduce-margins',
-    apply: (_r, layout) => {
-      if (layout.marginInches > MIN_LAYOUT.marginInches) {
-        layout.marginInches = Math.max(MIN_LAYOUT.marginInches, layout.marginInches - 0.05);
-        return `Reduced page margins to ${layout.marginInches.toFixed(2)}in`;
-      }
-      return null;
-    },
+    name: 'reduce-topbottom-margins',
+    apply: (_r, layout) => step(layout, 'marginTopBottomIn', -0.02, MIN_LAYOUT.marginTopBottomIn, 'in'),
   },
   {
     name: 'reduce-font-size',
@@ -167,18 +95,67 @@ const MOVES: Move[] = [
       return null;
     },
   },
+
+  // Only past this line does anything touch CONTENT, and only in this order —
+  // never a JD-relevant Experience/Project bullet until the absolute last resort.
+  {
+    name: 'remove-least-relevant-hackathon-or-workshop',
+    apply: (r) => {
+      if (r.hackathons.length > 0) {
+        const dropped = r.hackathons.pop();
+        return `Removed a lower-priority hackathon: "${dropped?.name}"`;
+      }
+      if (r.workshops.length > 0) {
+        const dropped = r.workshops.pop();
+        return `Removed a lower-priority workshop: "${dropped?.title}"`;
+      }
+      return null;
+    },
+  },
+  {
+    name: 'remove-least-relevant-extracurricular-non-pinned',
+    apply: (r) => {
+      for (let i = r.extraCurricular.length - 1; i >= 0; i--) {
+        if (!r.extraCurricular[i].pinned) {
+          const [removed] = r.extraCurricular.splice(i, 1);
+          return `Removed a lower-priority extra-curricular entry: "${removed.impact.slice(0, 50)}…"`;
+        }
+      }
+      return null;
+    },
+  },
+  {
+    name: 'trim-certifications',
+    apply: (r) => {
+      if (r.certifications.length === 0) return null;
+      const dropped = r.certifications.pop();
+      return `Removed a lower-priority certification: "${dropped?.name}"`;
+    },
+  },
+  {
+    name: 'drop-third-project',
+    apply: (r) => {
+      if (r.projects.length <= MIN_PROJECTS) return null;
+      const dropped = r.projects.pop();
+      return `Removed the least relevant project "${dropped?.name}" to fit one page`;
+    },
+  },
   {
     name: 'remove-experience-bullet-floor',
     apply: (r) => {
-      // Last resort before failing: allow single-bullet items to lose their
-      // bullet rather than emitting a two-page resume.
+      // Absolute last resort. Reaching this means every cosmetic move and
+      // every Workshop/Hackathon/Extra-Curricular/Certificate/3rd-project cut
+      // still wasn't enough — that should be rare-to-never in practice.
       const groups = bulletGroups(r).filter((g) => g.bullets.some((b) => !b.locked));
       if (groups.length === 0) return null;
       const target = groups[groups.length - 1];
       const idx = target.bullets.findIndex((b) => !b.locked);
       if (idx < 0) return null;
-      target.bullets.splice(idx, 1);
-      return 'Removed a further bullet to fit the one-page limit';
+      const [removed] = target.bullets.splice(idx, 1);
+      log.error('last-resort bullet removal reached — every cosmetic and content-cut move was exhausted first', {
+        removed: removed.text.slice(0, 60),
+      });
+      return 'Removed a further bullet to fit the one-page limit (last resort)';
     },
   },
 ];

@@ -1,17 +1,22 @@
 import type {
   AchievementEntry,
   CertificationEntry,
+  DefaultSkillCategory,
   EducationEntry,
   ExperienceEntry,
+  ExtraCurricularEntry,
+  HackathonEntry,
   MasterResume,
   PersonalInfo,
   ProfileLink,
   ProjectEntry,
-  SkillCategories,
+  Skills,
+  WorkshopEntry,
 } from '../types/resume.ts';
-import { emptySkills } from '../types/resume.ts';
+import { allSkills } from '../types/resume.ts';
 import { newId, nowIso } from '../utils/id.ts';
-import { classifyLinks, findProjectLinks } from './links.ts';
+import { associateCertificateLinks, classifyLinks, findProjectLinks } from './links.ts';
+import { detectDsaPracticeSignal } from './signals.ts';
 
 /**
  * Deterministic structuring of resume text into the MasterResume schema.
@@ -31,6 +36,9 @@ type SectionName =
   | 'skills'
   | 'certifications'
   | 'achievements'
+  | 'workshops'
+  | 'hackathons'
+  | 'extracurricular'
   | 'unknown';
 
 const HEADINGS: Array<{ re: RegExp; name: SectionName }> = [
@@ -42,17 +50,45 @@ const HEADINGS: Array<{ re: RegExp; name: SectionName }> = [
   { re: /^(technical\s+)?skills( (&|and) (interests|abilities))?$|^technologies$|^tech stack$/i, name: 'skills' },
   { re: /^certifications?$|^licenses?( (&|and) certifications?)?$|^courses$/i, name: 'certifications' },
   { re: /^achievements?$|^awards?( (&|and) achievements?)?$|^honou?rs$|^accomplishments$/i, name: 'achievements' },
+  { re: /^workshops?$|^trainings?$|^bootcamps?$/i, name: 'workshops' },
+  { re: /^hackathons?$/i, name: 'hackathons' },
+  {
+    re: /^extra[\s-]?curricular( activities)?$|^leadership( (&|and) activities)?$|^volunteer(ing)?$|^clubs?( (&|and) societies)?$/i,
+    name: 'extracurricular',
+  },
 ];
 
 const BULLET_RE = /^\s*(?:[•·●▪◦‣▸*\u2022]|-{1,2}|\u2013|\u2014)\s+/;
 
-const SKILL_LABELS: Array<{ re: RegExp; key: keyof SkillCategories }> = [
-  { re: /^(programming\s+)?languages?$/i, key: 'languages' },
-  { re: /^frameworks?( (&|and) libraries)?$/i, key: 'frameworks' },
-  { re: /^librar(y|ies)$/i, key: 'libraries' },
-  { re: /^(developer\s+)?tools?$|^software$|^platforms?$/i, key: 'tools' },
-  { re: /^technologies$|^databases?$|^cloud$|^concepts?$|^other$/i, key: 'technologies' },
+/**
+ * Maps a free-text skill sub-heading onto one of the app's default
+ * categories. Anything that doesn't match keeps a fallback bucket named
+ * after the source resume's own label (see `categoryFor`) so no skill is
+ * ever silently dropped. "Core CS" is deliberately never a target here — it
+ * is exclusively evidence-derived, see `detectDsaPracticeSignal`.
+ */
+const SKILL_CATEGORY_RULES: Array<{ re: RegExp; category: DefaultSkillCategory }> = [
+  { re: /^(programming\s+)?languages?$/i, category: 'Programming' },
+  { re: /^frameworks?( (&|and) libraries)?$|^librar(y|ies)$/i, category: 'Frameworks & Libraries' },
+  { re: /^databases?$|^dbms$/i, category: 'Databases' },
+  { re: /^(developer\s+)?tools?$|^software$|^platforms?$/i, category: 'Developer Tools & Platforms' },
+  { re: /^cloud( (&|and) deployment)?$|^deployment$|^devops$/i, category: 'Cloud & Deployment' },
+  {
+    re: /^(ai|artificial intelligence)( (&|and) (ml|machine learning))?$|^machine learning$|^ml$|^deep learning$|^nlp$/i,
+    category: 'AI Automation & Machine Learning',
+  },
+  { re: /^data science( (&|and) analytics)?$|^analytics$|^data analysis$/i, category: 'Data Science & Analytics' },
+  { re: /^soft skills?$|^interpersonal( skills)?$/i, category: 'Soft Skills' },
 ];
+
+function titleCase(s: string): string {
+  return s.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+}
+
+function categoryFor(label: string): string {
+  const rule = SKILL_CATEGORY_RULES.find((r) => r.re.test(label));
+  return rule ? rule.category : titleCase(label);
+}
 
 const isHeading = (line: string): SectionName | null => {
   const clean = line.replace(/[:•\-–—_|]+$/g, '').replace(/^[|\s]+/, '').trim();
@@ -142,8 +178,14 @@ function parsePersonalInfo(headerLines: string[], text: string): PersonalInfo {
   };
 }
 
-function parseSkills(lines: string[]): SkillCategories {
-  const skills = emptySkills();
+function parseSkills(lines: string[]): Skills {
+  const byName = new Map<string, string[]>();
+  const addTo = (name: string, values: string[]) => {
+    const arr = byName.get(name) ?? [];
+    arr.push(...values);
+    byName.set(name, arr);
+  };
+
   for (const line of lines) {
     const clean = stripBullet(line);
     const m = /^([A-Za-z /&+]{3,40}?)\s*[:\-–]\s*(.+)$/.exec(clean);
@@ -153,19 +195,18 @@ function parseSkills(lines: string[]): SkillCategories {
         .split(/[,;|]/)
         .map((v) => v.trim().replace(/\.$/, ''))
         .filter((v) => v.length > 0 && v.length < 40);
-      const rule = SKILL_LABELS.find((r) => r.re.test(label));
-      const key: keyof SkillCategories = rule ? rule.key : 'other';
-      skills[key].push(...values);
+      addTo(categoryFor(label), values);
     } else if (clean.includes(',')) {
-      skills.other.push(
-        ...clean
+      addTo(
+        'Other',
+        clean
           .split(/[,;|]/)
           .map((v) => v.trim())
           .filter((v) => v.length > 0 && v.length < 40),
       );
     }
   }
-  return skills;
+  return [...byName.entries()].map(([name, items]) => ({ name, items }));
 }
 
 const INSTITUTION_RE = /university|college|institute|school|academy/i;
@@ -373,6 +414,60 @@ function parseAchievements(lines: string[]): AchievementEntry[] {
     .map((l) => ({ id: newId('ach'), text: l, date: /\b(19|20)\d{2}\b/.exec(l)?.[0] }));
 }
 
+function parseWorkshops(lines: string[]): WorkshopEntry[] {
+  return lines
+    .map((l) => stripBullet(l))
+    .filter((l) => l.length > 3)
+    .map((l) => {
+      const parts = l.split(/\s*[—–|]\s*|\s+-\s+/).map((p) => p.trim());
+      const date = /\b(19|20)\d{2}\b/.exec(l)?.[0];
+      return {
+        id: newId('workshop'),
+        title: parts[0].replace(/,?\s*\b(19|20)\d{2}\b\.?$/, '').trim(),
+        organizer: parts[1]?.replace(/,?\s*\b(19|20)\d{2}\b\.?$/, '').trim() || undefined,
+        date,
+      };
+    });
+}
+
+function parseHackathons(lines: string[]): HackathonEntry[] {
+  const RESULT_RE = /\b(winner|1st place|first place|runner[- ]?up|finalist|participant|2nd place|3rd place)\b/i;
+  return lines
+    .map((l) => stripBullet(l))
+    .filter((l) => l.length > 3)
+    .map((l) => {
+      const parts = l.split(/\s*[—–|]\s*|\s+-\s+/).map((p) => p.trim());
+      const date = /\b(19|20)\d{2}\b/.exec(l)?.[0];
+      return {
+        id: newId('hack'),
+        name: parts[0].replace(/,?\s*\b(19|20)\d{2}\b\.?$/, '').trim(),
+        result: RESULT_RE.exec(l)?.[0],
+        date,
+      };
+    });
+}
+
+function parseExtraCurricular(lines: string[]): ExtraCurricularEntry[] {
+  return lines
+    .map((l) => stripBullet(l))
+    .filter((l) => l.length > 3)
+    .map((l) => {
+      const parts = l
+        .split(/\s*[—–|]\s*|\s+-\s+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      if (parts.length >= 2) {
+        return {
+          id: newId('extra'),
+          role: parts[0],
+          organization: parts[1],
+          impact: parts.slice(2).join(' — ') || parts[1],
+        };
+      }
+      return { id: newId('extra'), role: '', impact: l };
+    });
+}
+
 export interface StructureInput {
   text: string;
   links: ProfileLink[];
@@ -394,21 +489,29 @@ export function structureResume(input: StructureInput): MasterResume {
   const projects = parseProjects(sections.get('projects') ?? [], input.links);
   const skills = parseSkills(sections.get('skills') ?? []);
 
+  // An existing DSA-practice claim anywhere in the resume's own text feeds a
+  // synthesized "Core CS" skill category — never fabricated with a made-up
+  // count. The same signal is stashed on the returned resume so compose.ts
+  // can build the (also evidence-only) Extra Curricular DSA line from the
+  // identical source instead of re-deriving it separately.
+  const dsaSignal = detectDsaPracticeSignal(input.text) ?? undefined;
+  if (dsaSignal) {
+    const topicSuffix = dsaSignal.topics ? `: ${dsaSignal.topics}` : '';
+    skills.push({
+      name: 'Core CS',
+      items: [`Data Structures & Algorithms (${dsaSignal.count}+ problems solved${topicSuffix})`],
+    });
+  }
+
   // Technologies named inside a role's bullets are legitimate signal for
   // matching, so long as they already appear in the declared skill list.
-  const declared = new Set(
-    [
-      ...skills.languages,
-      ...skills.frameworks,
-      ...skills.libraries,
-      ...skills.tools,
-      ...skills.technologies,
-    ].map((s) => s.toLowerCase()),
-  );
-  for (const entry of [...experience, ...internships]) {
+  const declared = new Set(allSkills(skills).map((s) => s.toLowerCase()));
+  const allExperience = [...experience, ...internships];
+  for (const entry of allExperience) {
     const blob = entry.bullets.join(' ').toLowerCase();
     entry.technologies = [...declared].filter((d) => blob.includes(d));
   }
+  associateCertificateLinks(allExperience, input.links);
 
   const now = nowIso();
   return {
@@ -426,6 +529,10 @@ export function structureResume(input: StructureInput): MasterResume {
     projects,
     certifications: parseCertifications(sections.get('certifications') ?? []),
     achievements: parseAchievements(sections.get('achievements') ?? []),
+    workshops: parseWorkshops(sections.get('workshops') ?? []),
+    hackathons: parseHackathons(sections.get('hackathons') ?? []),
+    extraCurricular: parseExtraCurricular(sections.get('extracurricular') ?? []),
+    dsaSignal,
     rawText: input.text,
     discoveredLinks: input.links,
   };

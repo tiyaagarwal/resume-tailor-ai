@@ -7,6 +7,8 @@ import {
   TextRun,
 } from 'docx';
 import type { SectionKey, TailoredResume } from '../types/tailored.ts';
+import { autoBoldMetrics, splitBoldRuns } from './textFormatting.ts';
+import { bucketProject } from './projectDetail.ts';
 
 /**
  * DOCX export. Mirrors the LaTeX renderer's content and section order exactly
@@ -29,32 +31,28 @@ function heading(text: string): Paragraph {
 
 function bulletParagraph(text: string): Paragraph {
   return new Paragraph({
-    text,
     bullet: { level: 0 },
     spacing: { after: 40 },
-    run: { size: 20, font: FONT },
+    children: boldRuns(text),
   });
 }
 
-function subheading(left: string, right: string, sub: string, subRight: string): Paragraph[] {
-  return [
-    new Paragraph({
-      tabStops: [{ type: 'right', position: 9350 }],
-      spacing: { before: 120, after: 0 },
-      children: [
-        new TextRun({ text: left, bold: true, size: 22, font: FONT }),
-        new TextRun({ text: `\t${right}`, size: 20, font: FONT }),
-      ],
-    }),
-    new Paragraph({
-      tabStops: [{ type: 'right', position: 9350 }],
-      spacing: { after: 60 },
-      children: [
-        new TextRun({ text: sub, italics: true, size: 20, font: FONT }),
-        new TextRun({ text: `\t${subRight}`, italics: true, size: 20, font: FONT }),
-      ],
-    }),
-  ];
+/** Splits `**bold**`-marked (or plain, auto-bolded-metric) text into
+ *  TextRuns — the DOCX equivalent of latex.ts's renderBoldText, sharing the
+ *  same `splitBoldRuns`/`autoBoldMetrics` so the two renderers never
+ *  disagree on which phrases get bolded. */
+function boldRuns(text: string, size = 20): TextRun[] {
+  return splitBoldRuns(autoBoldMetrics(text)).map(
+    (run) => new TextRun({ text: run.text, bold: run.bold, size, font: FONT }),
+  );
+}
+
+function entryLine(left: string, right: (TextRun | ExternalHyperlink)[]): Paragraph {
+  return new Paragraph({
+    tabStops: [{ type: 'right', position: 9350 }],
+    spacing: { before: 120, after: 0 },
+    children: [new TextRun({ text: left, bold: true, size: 22, font: FONT }), new TextRun({ text: '\t', size: 20, font: FONT }), ...right],
+  });
 }
 
 function linkRun(label: string, url: string): ExternalHyperlink {
@@ -71,26 +69,25 @@ function headerParagraphs(r: TailoredResume): Paragraph[] {
     contactRuns.push(node);
   };
 
-  if (r.personalInfo.location) push(new TextRun({ text: r.personalInfo.location, size: 20, font: FONT }));
-  if (r.personalInfo.phone) push(new TextRun({ text: r.personalInfo.phone, size: 20, font: FONT }));
-  if (r.personalInfo.email) push(linkRun(r.personalInfo.email, `mailto:${r.personalInfo.email}`));
-  if (r.links.linkedin) push(linkRun(r.links.linkedin.label, r.links.linkedin.url));
-  if (r.links.github) push(linkRun(r.links.github.label, r.links.github.url));
-  if (r.links.portfolio) push(linkRun(r.links.portfolio.label, r.links.portfolio.url));
-  if (r.links.leetcode) push(linkRun(r.links.leetcode.label, r.links.leetcode.url));
+  if (r.personalInfo.phone) push(new TextRun({ text: `M.No.: ${r.personalInfo.phone}`, size: 20, font: FONT }));
+  if (r.personalInfo.email) push(linkRun(`Email: ${r.personalInfo.email}`, `mailto:${r.personalInfo.email}`));
+  if (r.links.portfolio) push(linkRun('Portfolio', r.links.portfolio.url));
+  if (r.links.linkedin) push(linkRun('LinkedIn', r.links.linkedin.url));
+  if (r.links.github) push(linkRun('GitHub', r.links.github.url));
+  if (r.links.leetcode) push(linkRun('LeetCode', r.links.leetcode.url));
 
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: r.personalInfo.fullName, bold: true, size: 36, font: FONT })],
+      children: [new TextRun({ text: r.personalInfo.fullName.toUpperCase(), bold: true, size: 36, font: FONT })],
     }),
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 160 }, children: contactRuns }),
   ];
 }
 
-function summarySection(r: TailoredResume): Paragraph[] {
+function summaryParagraphs(r: TailoredResume): Paragraph[] {
   if (!r.summary.trim()) return [];
-  return [heading('Summary'), new Paragraph({ text: r.summary, run: { size: 20, font: FONT }, spacing: { after: 80 } })];
+  return [new Paragraph({ spacing: { after: 120 }, children: boldRuns(r.summary) })];
 }
 
 function educationSection(r: TailoredResume): Paragraph[] {
@@ -98,18 +95,25 @@ function educationSection(r: TailoredResume): Paragraph[] {
   const out: Paragraph[] = [heading('Education')];
   for (const e of r.education) {
     const dates = [e.startDate, e.endDate].filter(Boolean).join(' - ');
-    const degreeLine = [e.degree, e.gpa ? `CGPA: ${e.gpa}` : ''].filter(Boolean).join(', ');
-    out.push(...subheading(e.institution, e.location ?? '', degreeLine, dates));
+    out.push(entryLine(`${e.degree} | ${e.institution}`, [new TextRun({ text: dates, italics: true, size: 20, font: FONT })]));
+    if (e.gpa) {
+      out.push(new Paragraph({ indent: { left: 260 }, spacing: { after: 60 }, children: [new TextRun({ text: `CGPA: ${e.gpa}`, size: 20, font: FONT })] }));
+    }
   }
   return out;
 }
 
-function experienceLikeSection(entries: TailoredResume['experience'], title: string): Paragraph[] {
-  if (entries.length === 0) return [];
-  const out: Paragraph[] = [heading(title)];
-  for (const e of entries) {
+function experienceSection(r: TailoredResume): Paragraph[] {
+  if (r.experience.length === 0) return [];
+  const out: Paragraph[] = [heading('Work Experience')];
+  for (const e of r.experience) {
     const dates = [e.startDate, e.endDate].filter(Boolean).join(' - ');
-    out.push(...subheading(e.role, dates, e.organization, e.location ?? ''));
+    const right: (TextRun | ExternalHyperlink)[] = [new TextRun({ text: dates, italics: true, size: 20, font: FONT })];
+    if (e.certificateUrl) {
+      right.push(new TextRun({ text: '  ', size: 20, font: FONT }));
+      right.push(linkRun('Certificate', e.certificateUrl));
+    }
+    out.push(entryLine(`${e.organization} | ${e.role}`, right));
     for (const b of e.bullets) out.push(bulletParagraph(b.text));
   }
   return out;
@@ -119,73 +123,131 @@ function projectsSection(r: TailoredResume): Paragraph[] {
   if (r.projects.length === 0) return [];
   const out: Paragraph[] = [heading('Projects')];
   for (const p of r.projects) {
-    const techLine = p.technologies.length ? ` | ${p.technologies.join(', ')}` : '';
-    const linkRuns: (TextRun | ExternalHyperlink)[] = [];
-    if (p.repoUrl) linkRuns.push(linkRun('Code', p.repoUrl));
-    if (p.liveUrl) {
-      if (linkRuns.length) linkRuns.push(new TextRun({ text: '  |  ', size: 20, font: FONT }));
-      linkRuns.push(linkRun('Live Demo', p.liveUrl));
+    const detail = bucketProject(p);
+    const right: (TextRun | ExternalHyperlink)[] = p.repoUrl ? [linkRun('GitHub', p.repoUrl)] : [];
+    out.push(entryLine(p.tagline ? `${p.name} -- ${p.tagline}` : p.name, right));
+    if (detail.overview) {
+      out.push(new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: 'Overview: ', bold: true, size: 20, font: FONT }), ...boldRuns(detail.overview)] }));
     }
-    out.push(
-      new Paragraph({
-        spacing: { before: 120 },
-        children: [new TextRun({ text: `${p.name}${techLine}`, bold: true, size: 20, font: FONT })],
-      }),
-    );
-    if (linkRuns.length > 0) out.push(new Paragraph({ children: linkRuns, spacing: { after: 40 } }));
-    for (const b of p.bullets) out.push(bulletParagraph(b.text));
+    if (detail.features.length > 0) {
+      out.push(new Paragraph({ spacing: { after: 0 }, children: [new TextRun({ text: 'Features:', bold: true, size: 20, font: FONT })] }));
+      for (const b of detail.features) out.push(bulletParagraph(b.text));
+    }
+    if (detail.techStackLine) {
+      out.push(
+        new Paragraph({
+          spacing: { after: 40 },
+          children: [
+            new TextRun({ text: 'Tech Stack: ', bold: true, size: 20, font: FONT }),
+            new TextRun({ text: detail.techStackLine, size: 20, font: FONT }),
+          ],
+        }),
+      );
+    }
+    if (detail.impact) {
+      out.push(
+        new Paragraph({
+          spacing: { after: 80 },
+          children: [new TextRun({ text: 'Impact: ', bold: true, size: 20, font: FONT }), ...boldRuns(detail.impact.text)],
+        }),
+      );
+    }
   }
   return out;
 }
 
 function skillsSection(r: TailoredResume): Paragraph[] {
-  const rows: string[] = [];
-  const add = (label: string, values: string[]) => {
-    if (values.length > 0) rows.push(`${label}: ${values.join(', ')}`);
-  };
-  add('Languages', r.skills.languages);
-  add('Frameworks', r.skills.frameworks);
-  add('Libraries', r.skills.libraries);
-  add('Developer Tools', r.skills.tools);
-  add('Technologies', r.skills.technologies);
-  add('Other', r.skills.other);
+  const rows = r.skills
+    .map((c) => {
+      const allItems = [...c.items, ...(c.fabricated ?? [])];
+      return allItems.length > 0 ? { name: c.name, items: allItems } : null;
+    })
+    .filter((c): c is { name: string; items: string[] } => c !== null);
   if (rows.length === 0) return [];
   return [
-    heading('Technical Skills'),
-    ...rows.map((line) => new Paragraph({ text: line, run: { size: 20, font: FONT }, spacing: { after: 30 } })),
+    heading('Skills'),
+    ...rows.map(
+      (row) =>
+        new Paragraph({
+          spacing: { after: 30 },
+          children: [
+            new TextRun({ text: `${row.name}: `, bold: true, size: 20, font: FONT }),
+            new TextRun({ text: row.items.join(' | '), size: 20, font: FONT }),
+          ],
+        }),
+    ),
+  ];
+}
+
+function workshopsSection(r: TailoredResume): Paragraph[] {
+  if (r.workshops.length === 0) return [];
+  return [
+    heading('Workshops'),
+    ...r.workshops.map((w) => {
+      const label = [w.title, w.organizer, w.date].filter(Boolean).join(' - ');
+      return w.url
+        ? new Paragraph({ bullet: { level: 0 }, spacing: { after: 40 }, children: [linkRun(label, w.url)] })
+        : bulletParagraph(label);
+    }),
+  ];
+}
+
+function hackathonsSection(r: TailoredResume): Paragraph[] {
+  if (r.hackathons.length === 0) return [];
+  return [
+    heading('Hackathons'),
+    ...r.hackathons.map((h) => {
+      const label = [h.name, h.result, h.date].filter(Boolean).join(' - ');
+      return h.url
+        ? new Paragraph({ bullet: { level: 0 }, spacing: { after: 40 }, children: [linkRun(label, h.url)] })
+        : bulletParagraph(label);
+    }),
   ];
 }
 
 function certificationsSection(r: TailoredResume): Paragraph[] {
   if (r.certifications.length === 0) return [];
+  const out: Paragraph[] = [heading('Certificates')];
+  for (const c of r.certifications) {
+    const left = [c.name, c.issuer, c.date].filter(Boolean).join(' | ');
+    out.push(entryLine(left, c.url ? [linkRun('Certificate', c.url)] : []));
+  }
+  return out;
+}
+
+function extraCurricularSection(r: TailoredResume): Paragraph[] {
+  if (r.extraCurricular.length === 0) return [];
   return [
-    heading('Certifications'),
-    ...r.certifications.map((c) =>
-      bulletParagraph([c.name, c.issuer, c.date].filter(Boolean).join(' - ')),
-    ),
+    heading('Extra Curricular'),
+    ...r.extraCurricular.map((e) => {
+      const lead = [e.role, e.organization].filter(Boolean).join(' - ');
+      return new Paragraph({
+        bullet: { level: 0 },
+        spacing: { after: 40 },
+        children: lead
+          ? [new TextRun({ text: `${lead}: `, bold: true, size: 20, font: FONT }), ...boldRuns(e.impact)]
+          : boldRuns(e.impact),
+      });
+    }),
   ];
 }
 
-function achievementsSection(r: TailoredResume): Paragraph[] {
-  if (r.achievements.length === 0) return [];
-  return [heading('Achievements'), ...r.achievements.map((a) => bulletParagraph(a.text))];
-}
-
 const SECTION_BUILDERS: Record<SectionKey, (r: TailoredResume) => Paragraph[]> = {
-  summary: summarySection,
   education: educationSection,
-  experience: (r) => experienceLikeSection(r.experience, 'Experience'),
-  internship: (r) => experienceLikeSection(r.internships, 'Internships'),
-  projects: projectsSection,
   skills: skillsSection,
+  experience: experienceSection,
+  projects: projectsSection,
+  workshops: workshopsSection,
+  hackathons: hackathonsSection,
   certifications: certificationsSection,
-  achievements: achievementsSection,
+  extracurricular: extraCurricularSection,
 };
 
 export async function renderDocx(resume: TailoredResume): Promise<Buffer> {
   const hidden = new Set(resume.hiddenSections);
   const children: Paragraph[] = [
     ...headerParagraphs(resume),
+    ...summaryParagraphs(resume),
     ...resume.sectionOrder.filter((k) => !hidden.has(k)).flatMap((k) => SECTION_BUILDERS[k](resume)),
   ];
 

@@ -1,10 +1,12 @@
-import type { JobDescription, RoleDomain } from '../types/jd.ts';
-import type { MasterResume, SkillCategories } from '../types/resume.ts';
-import { allSkills, emptySkills } from '../types/resume.ts';
-import type { SectionKey, SelectionReason } from '../types/tailored.ts';
+import type { JobDescription } from '../types/jd.ts';
+import { jdSkillSurface } from '../types/jd.ts';
+import type { MasterResume, Skills } from '../types/resume.ts';
+import { allSkills } from '../types/resume.ts';
+import type { SectionKey, SelectionReason, TailoredSkillCategory } from '../types/tailored.ts';
 import { skillKey } from '../utils/text.ts';
+import { canonicalize, CANONICAL_SKILL_CATEGORY } from './taxonomy.ts';
 import type { JdIndex } from './scoring.ts';
-import { scoreBullet, scoreExperience, scoreProject, scoreSkill } from './scoring.ts';
+import { scoreExperience, scoreBullet, scoreProject, scoreSkill, scoreText } from './scoring.ts';
 
 /**
  * Content ranking: decides what earns space on a single page, and in what
@@ -28,30 +30,52 @@ export interface RankedItem {
   bullets: RankedBullet[];
 }
 
+export interface RankedSimpleItem {
+  id: string;
+  relevance: number;
+}
+
 export interface RankedContent {
   experience: RankedItem[];
-  internships: RankedItem[];
   projects: RankedItem[];
-  skills: SkillCategories;
-  /** Skills present in the master resume but deliberately not shown. */
+  skills: TailoredSkillCategory[];
+  /** Skills present in the master resume but deliberately not shown. Always
+   *  empty for the current template — the full skill superset is always
+   *  kept — retained only so callers/tests don't need special-casing. */
   droppedSkills: string[];
-  certifications: Array<{ id: string; relevance: number }>;
-  achievements: Array<{ id: string; relevance: number }>;
+  certifications: RankedSimpleItem[];
+  workshops: RankedSimpleItem[];
+  hackathons: RankedSimpleItem[];
+  extraCurricular: RankedSimpleItem[];
   sectionOrder: SectionKey[];
   reasons: SelectionReason[];
 }
 
 /** Budgets that keep the first render close to one page. */
 const BUDGET = {
-  maxExperience: 3,
-  maxInternships: 2,
-  maxProjects: 3,
+  maxWorkExperience: 4,
+  maxProjectsMax: 3,
+  maxProjectsMin: 2,
   maxBulletsPerRole: 4,
   maxBulletsPerProject: 3,
-  maxSkillsPerCategory: 12,
   maxCertifications: 3,
-  maxAchievements: 3,
+  maxWorkshops: 2,
+  maxHackathons: 2,
+  maxExtraCurricular: 3,
 };
+
+/** Fixed section order per the app's current LaTeX/Overleaf template spec —
+ *  no longer a JD-domain-dependent choice. */
+const FIXED_SECTION_ORDER: SectionKey[] = [
+  'education',
+  'skills',
+  'experience',
+  'projects',
+  'workshops',
+  'hackathons',
+  'certifications',
+  'extracurricular',
+];
 
 function rankBullets(
   bullets: string[],
@@ -67,81 +91,93 @@ function rankBullets(
     .sort((a, b) => b.relevance - a.relevance);
 }
 
-/**
- * Section order is a deliberate function of the JD's domain and the
- * candidate's own strengths — never random, and never reordered per render.
- */
-export function decideSectionOrder(
-  master: MasterResume,
-  jd: JobDescription,
-  ranked: { experience: RankedItem[]; internships: RankedItem[]; projects: RankedItem[] },
-): SectionKey[] {
-  const hasExperience = ranked.experience.length > 0;
-  const hasInternship = ranked.internships.length > 0;
-  const hasProjects = ranked.projects.length > 0;
-  const hasCerts = master.certifications.length > 0;
-  const hasAchievements = master.achievements.length > 0;
-
-  // "Strong experience" means roles that are both real and *relevant to this
-  // JD*. Counting roles alone would pin every resume to the same layout, since
-  // a candidate's role count doesn't change between applications.
-  const topExperience = ranked.experience[0]?.relevance ?? 0;
-  const strongExperience =
-    (ranked.experience.length >= 2 && topExperience >= 0.45) || topExperience >= 0.6;
-
-  const skillsFirstDomains: RoleDomain[] = ['ai-ml', 'data', 'devops'];
-  const skillsFirst = skillsFirstDomains.includes(jd.domain) || strongExperience;
-
-  const order: SectionKey[] = [];
-  const push = (k: SectionKey, when: boolean) => {
-    if (when && !order.includes(k)) order.push(k);
-  };
-
-  if (skillsFirst) {
-    // Technical-screen-heavy roles: lead with the stack, then proof of use.
-    push('skills', true);
-    push('experience', hasExperience);
-    push('internship', hasInternship);
-    push('projects', hasProjects);
-    push('education', master.education.length > 0);
-  } else {
-    // Early-career software roles: education still carries weight up top.
-    push('education', master.education.length > 0);
-    push('experience', hasExperience);
-    push('internship', hasInternship);
-    push('projects', hasProjects);
-    push('skills', true);
-  }
-
-  push('certifications', hasCerts);
-  push('achievements', hasAchievements);
-  return order;
+/** The fixed order, filtered down to sections that actually have content. */
+export function decideSectionOrder(hasContent: Record<SectionKey, boolean>): SectionKey[] {
+  return FIXED_SECTION_ORDER.filter((k) => hasContent[k]);
 }
 
-function pickSkills(
+/**
+ * Keeps the FULL skill superset (never trims for space — the optimizer must
+ * not touch skills either), preserving each category's item order verbatim
+ * (only categories are reordered by relevance, never the items within one).
+ * JD-only keywords with zero master-resume evidence are added separately, to
+ * `fabricated`, by `injectJdKeywords` below.
+ */
+function pickSkills(master: MasterResume): TailoredSkillCategory[] {
+  return master.skills.filter((c) => c.items.length > 0).map((c) => ({ name: c.name, items: [...c.items] }));
+}
+
+/** Sorts categories (never items within one) by aggregate JD relevance. */
+function reorderSkillCategoriesByRelevance(
+  categories: TailoredSkillCategory[],
   master: MasterResume,
   index: JdIndex,
-): { skills: SkillCategories; dropped: string[] } {
+): TailoredSkillCategory[] {
   const resumeText = [
     ...master.experience.flatMap((e) => e.bullets),
     ...master.internships.flatMap((e) => e.bullets),
     ...master.projects.flatMap((p) => [...p.bullets, ...p.technologies]),
   ].join(' ');
 
-  const out = emptySkills();
-  const dropped: string[] = [];
-  const categories = Object.keys(master.skills) as Array<keyof SkillCategories>;
+  const scored = categories.map((c) => {
+    const relevance =
+      c.name === 'Core CS'
+        ? 1 // the evidence-derived DSA line is always worth keeping near the top
+        : c.items.reduce((sum, item) => sum + scoreSkill(item, index, resumeText), 0) /
+          Math.max(1, c.items.length);
+    return { category: c, relevance };
+  });
+  scored.sort((a, b) => b.relevance - a.relevance);
+  return scored.map((s) => s.category);
+}
 
-  for (const cat of categories) {
-    const scored = master.skills[cat]
-      .map((s) => ({ s, score: scoreSkill(s, index, resumeText) }))
-      .sort((a, b) => b.score - a.score);
+/**
+ * Adds JD-derived keywords with zero master-resume evidence into the
+ * matching category's `fabricated` list. This is the one place this app
+ * allows an unbacked claim, per an explicit user override of its default
+ * truthfulness guarantee — scoped narrowly to Skills, and never applied to
+ * 'Core CS' (exclusively evidence-derived).
+ */
+function injectJdKeywords(categories: TailoredSkillCategory[], jd: JobDescription): TailoredSkillCategory[] {
+  const byName = new Map(categories.map((c) => [c.name, c]));
+  const jdTerms = jdSkillSurface(jd);
 
-    const kept = scored.slice(0, BUDGET.maxSkillsPerCategory);
-    out[cat] = kept.map((k) => k.s);
-    dropped.push(...scored.slice(BUDGET.maxSkillsPerCategory).map((k) => k.s));
+  for (const term of jdTerms) {
+    const canonical = canonicalize(term) ?? term;
+    const category = CANONICAL_SKILL_CATEGORY[canonical];
+    if (!category || category === 'Core CS') continue;
+
+    let target = byName.get(category);
+    if (!target) {
+      // Only ever create one of the 9 default categories — never an
+      // arbitrary/new one — when the resume has nothing in it at all yet.
+      target = { name: category, items: [] };
+      byName.set(category, target);
+      categories.push(target);
+    }
+
+    const alreadyPresent = [...target.items, ...(target.fabricated ?? [])].some(
+      (s) => skillKey(s) === skillKey(canonical),
+    );
+    if (alreadyPresent) continue;
+
+    target.fabricated = target.fabricated ?? [];
+    target.fabricated.push(canonical);
   }
-  return { skills: out, dropped };
+
+  return categories;
+}
+
+function rankSimple<T extends { id: string }>(
+  entries: T[],
+  textOf: (t: T) => string,
+  index: JdIndex,
+  limit: number,
+): RankedSimpleItem[] {
+  return entries
+    .map((e) => ({ id: e.id, relevance: scoreText(textOf(e), index).score }))
+    .sort((a, b) => b.relevance - a.relevance)
+    .slice(0, limit);
 }
 
 export function rankContent(master: MasterResume, jd: JobDescription, index: JdIndex): RankedContent {
@@ -150,46 +186,41 @@ export function rankContent(master: MasterResume, jd: JobDescription, index: JdI
   const buildItems = (
     entries: MasterResume['experience'],
     kind: 'experience' | 'internship',
-    limit: number,
-  ): RankedItem[] => {
-    const scored = entries
-      .map((e) => {
-        const s = scoreExperience(e, index);
-        return {
-          id: e.id,
-          label: `${e.role} — ${e.organization}`,
-          kind,
-          relevance: s.score,
-          matchedTerms: s.matchedTerms,
-          bullets: rankBullets(e.bullets, e.id, index, e.endDate).slice(
-            0,
-            BUDGET.maxBulletsPerRole,
-          ),
-        } satisfies RankedItem;
-      })
-      .sort((a, b) => b.relevance - a.relevance);
-
-    scored.forEach((item, i) => {
-      const included = i < limit;
-      reasons.push({
-        itemId: item.id,
-        itemLabel: item.label,
+  ): RankedItem[] =>
+    entries.map((e) => {
+      const s = scoreExperience(e, index);
+      return {
+        id: e.id,
+        label: `${e.role} — ${e.organization}`,
         kind,
-        relevance: Math.round(item.relevance * 100),
-        matchedTerms: item.matchedTerms,
-        included,
-        reason: included
-          ? item.matchedTerms.length > 0
-            ? `Matches ${item.matchedTerms.slice(0, 4).join(', ')} from the job description.`
-            : 'Included as recent, relevant professional experience.'
-          : 'Ranked below higher-matching entries and cut to fit one page.',
-      });
+        relevance: s.score,
+        matchedTerms: s.matchedTerms,
+        bullets: rankBullets(e.bullets, e.id, index, e.endDate).slice(0, BUDGET.maxBulletsPerRole),
+      } satisfies RankedItem;
     });
-    return scored.slice(0, limit);
-  };
 
-  const experience = buildItems(master.experience, 'experience', BUDGET.maxExperience);
-  const internships = buildItems(master.internships, 'internship', BUDGET.maxInternships);
+  const allExperience = [
+    ...buildItems(master.experience, 'experience'),
+    ...buildItems(master.internships, 'internship'),
+  ].sort((a, b) => b.relevance - a.relevance);
+
+  allExperience.forEach((item, i) => {
+    const included = i < BUDGET.maxWorkExperience;
+    reasons.push({
+      itemId: item.id,
+      itemLabel: item.label,
+      kind: item.kind,
+      relevance: Math.round(item.relevance * 100),
+      matchedTerms: item.matchedTerms,
+      included,
+      reason: included
+        ? item.matchedTerms.length > 0
+          ? `Matches ${item.matchedTerms.slice(0, 4).join(', ')} from the job description.`
+          : 'Included as recent, relevant professional experience.'
+        : 'Ranked below higher-matching entries and cut to fit one page.',
+    });
+  });
+  const experience = allExperience.slice(0, BUDGET.maxWorkExperience);
 
   const projectsScored = master.projects
     .map((p) => {
@@ -200,16 +231,16 @@ export function rankContent(master: MasterResume, jd: JobDescription, index: JdI
         kind: 'project' as const,
         relevance: s.score,
         matchedTerms: s.matchedTerms,
-        bullets: rankBullets(p.bullets, p.id, index, p.endDate).slice(
-          0,
-          BUDGET.maxBulletsPerProject,
-        ),
+        bullets: rankBullets(p.bullets, p.id, index, p.endDate).slice(0, BUDGET.maxBulletsPerProject),
       } satisfies RankedItem;
     })
     .sort((a, b) => b.relevance - a.relevance);
 
+  // Cap at 3; naturally never below 2 when at least 2 genuinely exist.
+  const projects = projectsScored.slice(0, Math.min(BUDGET.maxProjectsMax, projectsScored.length));
+
   projectsScored.forEach((item, i) => {
-    const included = i < BUDGET.maxProjects;
+    const included = i < projects.length;
     reasons.push({
       itemId: item.id,
       itemLabel: item.label,
@@ -224,21 +255,18 @@ export function rankContent(master: MasterResume, jd: JobDescription, index: JdI
         : 'Less relevant to this job description than the selected projects.',
     });
   });
-  const projects = projectsScored.slice(0, BUDGET.maxProjects);
 
-  const { skills, dropped } = pickSkills(master, index);
+  let skills = pickSkills(master);
+  skills = reorderSkillCategoriesByRelevance(skills, master, index);
+  skills = injectJdKeywords(skills, jd);
 
-  const certifications = master.certifications
-    .map((c) => {
-      const s = scoreSkill(c.name, index, `${c.name} ${c.issuer ?? ''}`);
-      return { id: c.id, relevance: s, name: c.name };
-    })
+  const certScored = master.certifications
+    .map((c) => ({ id: c.id, label: c.name, relevance: scoreSkill(c.name, index, `${c.name} ${c.issuer ?? ''}`) }))
     .sort((a, b) => b.relevance - a.relevance);
-
-  certifications.forEach((c, i) => {
+  certScored.forEach((c, i) => {
     reasons.push({
       itemId: c.id,
-      itemLabel: c.name,
+      itemLabel: c.label,
       kind: 'certification',
       relevance: Math.round(c.relevance * 100),
       matchedTerms: [],
@@ -249,22 +277,55 @@ export function rankContent(master: MasterResume, jd: JobDescription, index: JdI
           : 'Lower priority than other content on a one-page resume.',
     });
   });
+  const certifications = certScored.slice(0, BUDGET.maxCertifications).map((c) => ({ id: c.id, relevance: c.relevance }));
 
-  const achievements = master.achievements.map((a) => ({ id: a.id, relevance: 0.5 }));
+  const workshops = rankSimple(
+    master.workshops,
+    (w) => [w.title, w.organizer ?? '', w.description ?? ''].join(' '),
+    index,
+    BUDGET.maxWorkshops,
+  );
+  const hackathons = rankSimple(
+    master.hackathons,
+    (h) => [h.name, h.result ?? '', h.description ?? '', ...(h.technologies ?? [])].join(' '),
+    index,
+    BUDGET.maxHackathons,
+  );
 
-  const sectionOrder = decideSectionOrder(master, jd, { experience, internships, projects });
+  // Achievements fold into Extra Curricular at this stage (no standalone
+  // "Achievements" section in this template's fixed order).
+  const extraCurricularSource = [
+    ...master.extraCurricular,
+    ...master.achievements.map((a) => ({ id: a.id, role: '', impact: a.text })),
+  ];
+  const extraCurricular = rankSimple(
+    extraCurricularSource,
+    (e) => [('role' in e ? e.role : ''), 'organization' in e ? e.organization ?? '' : '', e.impact].join(' '),
+    index,
+    BUDGET.maxExtraCurricular,
+  );
+
+  const hasContent: Record<SectionKey, boolean> = {
+    education: master.education.length > 0,
+    skills: skills.length > 0,
+    experience: experience.length > 0,
+    projects: projects.length > 0,
+    workshops: workshops.length > 0,
+    hackathons: hackathons.length > 0,
+    certifications: certifications.length > 0,
+    extracurricular: extraCurricular.length > 0,
+  };
+  const sectionOrder = decideSectionOrder(hasContent);
 
   return {
     experience,
-    internships,
     projects,
     skills,
-    droppedSkills: dropped,
-    certifications: certifications.slice(0, BUDGET.maxCertifications).map((c) => ({
-      id: c.id,
-      relevance: c.relevance,
-    })),
-    achievements: achievements.slice(0, BUDGET.maxAchievements),
+    droppedSkills: [],
+    certifications,
+    workshops,
+    hackathons,
+    extraCurricular,
     sectionOrder,
     reasons,
   };
@@ -274,12 +335,10 @@ export function rankContent(master: MasterResume, jd: JobDescription, index: JdI
  * Skills that exist in the master resume, are wanted by the JD, but did not
  * make the cut. Surfacing these is the difference between "you lack this" and
  * "we left this out", which the analysis dashboard must not conflate.
+ * (In this template nothing is trimmed for space, so this is always empty
+ * unless a future template reintroduces per-category budgets.)
  */
-export function skillsOmittedButOwned(
-  master: MasterResume,
-  selected: SkillCategories,
-  index: JdIndex,
-): string[] {
+export function skillsOmittedButOwned(master: MasterResume, selected: Skills, index: JdIndex): string[] {
   const shown = new Set(allSkills(selected).map(skillKey));
   return allSkills(master.skills).filter((s) => {
     const key = skillKey(s);

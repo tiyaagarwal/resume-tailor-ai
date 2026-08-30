@@ -22,7 +22,7 @@ export async function uploadMasterResume(req: Request, res: Response): Promise<v
         projects: resume.projects.length,
         certifications: resume.certifications.length,
         achievements: resume.achievements.length,
-        skills: Object.values(resume.skills).reduce((n, arr) => n + arr.length, 0),
+        skills: resume.skills.reduce((n, cat) => n + cat.items.length, 0),
         links: Object.values(resume.links).filter(Boolean).length - 1 + resume.links.other.length,
       },
     },

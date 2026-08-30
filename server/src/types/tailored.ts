@@ -1,22 +1,27 @@
 import type {
-  AchievementEntry,
   CertificationEntry,
   EducationEntry,
+  ExtraCurricularEntry,
+  HackathonEntry,
   PersonalInfo,
   ResumeLinks,
-  SkillCategories,
+  WorkshopEntry,
 } from './resume.ts';
 
-/** Sections the renderer knows how to lay out, in Jake's Resume style. */
+/** Sections the renderer knows how to lay out, in this app's custom
+ *  Overleaf-style format. 'summary' is intentionally not a member — it
+ *  renders unconditionally below the header, not through the section
+ *  loop. Experience and internships render together under one 'experience'
+ *  key; achievements fold into 'extracurricular'. */
 export type SectionKey =
-  | 'summary'
   | 'education'
-  | 'experience'
-  | 'internship'
-  | 'projects'
   | 'skills'
+  | 'experience'
+  | 'projects'
+  | 'workshops'
+  | 'hackathons'
   | 'certifications'
-  | 'achievements';
+  | 'extracurricular';
 
 /**
  * A bullet that has survived selection. `sourceId` + `sourceIndex` point at the
@@ -44,11 +49,14 @@ export interface TailoredExperience {
   endDate?: string;
   bullets: TailoredBullet[];
   relevance: number;
+  certificateUrl?: string;
 }
 
 export interface TailoredProject {
   id: string;
   name: string;
+  /** Rendered as the entry's "Overview" line when present. */
+  tagline?: string;
   /** Rendered as "Name | Tech, Tech" in the Jake's template. */
   technologies: string[];
   bullets: TailoredBullet[];
@@ -57,6 +65,18 @@ export interface TailoredProject {
   startDate?: string;
   endDate?: string;
   relevance: number;
+}
+
+export interface TailoredSkillCategory {
+  name: string;
+  items: string[];
+  /** JD-derived keywords with zero master-resume evidence — the one place
+   *  this app allows unbacked claims, per an explicit user override of the
+   *  default truthfulness guarantee. Rendered identically to `items` (no
+   *  visual distinction), tracked separately only for the ATS-gap audit
+   *  trail. Never populated for the 'Core CS' category, which is
+   *  exclusively evidence-derived (see MasterResume.dsaSignal). */
+  fabricated?: string[];
 }
 
 export interface TailoredResume {
@@ -69,12 +89,17 @@ export interface TailoredResume {
   /** Sections the user has switched off in the editor. */
   hiddenSections: SectionKey[];
   education: EducationEntry[];
-  skills: SkillCategories;
+  skills: TailoredSkillCategory[];
+  /** Experience and internships merged into one relevance/recency-sorted
+   *  array; entries stay `kind`-tagged internally for scoring/truthfulness. */
   experience: TailoredExperience[];
-  internships: TailoredExperience[];
   projects: TailoredProject[];
+  workshops: WorkshopEntry[];
+  hackathons: HackathonEntry[];
   certifications: CertificationEntry[];
-  achievements: AchievementEntry[];
+  /** Ranked achievements are folded in here (role: '') alongside genuine
+   *  extra-curricular entries and the pinned DSA-practice line. */
+  extraCurricular: ExtraCurricularEntry[];
 }
 
 export interface AtsScore {
@@ -95,7 +120,15 @@ export interface AtsScore {
 export interface SelectionReason {
   itemId: string;
   itemLabel: string;
-  kind: 'experience' | 'internship' | 'project' | 'skill' | 'certification' | 'achievement';
+  kind:
+    | 'experience'
+    | 'internship'
+    | 'project'
+    | 'skill'
+    | 'certification'
+    | 'workshop'
+    | 'hackathon'
+    | 'extracurricular';
   relevance: number;
   matchedTerms: string[];
   included: boolean;

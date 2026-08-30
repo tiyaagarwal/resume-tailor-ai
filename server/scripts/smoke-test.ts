@@ -7,7 +7,7 @@
  *   - master-resume text structuring works,
  *   - job-description analysis + relevance scoring works,
  *   - content ranking/selection stays grounded in the master resume,
- *   - the Jake's Resume LaTeX template compiles,
+ *   - the custom LaTeX/Overleaf template compiles,
  *   - the one-page optimizer converges,
  *   - every expected hyperlink is present as a real PDF annotation,
  *   - DOCX export succeeds.
@@ -144,9 +144,11 @@ async function main(): Promise<void> {
   const index = buildJdIndex(jd);
   const ranked = rankContent(master, jd, index);
   assert(ranked.experience.length > 0, `experience ranked and kept: ${ranked.experience.length}`);
+  const flipkart = ranked.experience.find((e) => e.kind === 'experience');
+  const sprinklr = ranked.experience.find((e) => e.kind === 'internship');
   assert(
-    ranked.experience[0].relevance >= (ranked.internships[0]?.relevance ?? 0),
-    'the Flipkart backend internship outranks the ML internship for a backend JD',
+    (flipkart?.relevance ?? 0) >= (sprinklr?.relevance ?? 0),
+    'the Flipkart backend role outranks the ML internship for a backend JD',
   );
   const ats = computeAtsScore(master, jd, index);
   console.log(`  ATS match score: ${ats.overall}/100 (skills ${ats.skillCoverage}, keywords ${ats.keywordCoverage})`);
@@ -154,7 +156,7 @@ async function main(): Promise<void> {
 
   console.log('\n=== 4. Composing tailored resume (deterministic, 100% grounded) ===');
   const baseline = composeTailoredResume(master, jd, ranked);
-  for (const group of [...baseline.experience, ...baseline.internships, ...baseline.projects]) {
+  for (const group of [...baseline.experience, ...baseline.projects]) {
     for (const b of group.bullets) {
       assert(SAMPLE_RESUME_TEXT.includes(b.text), `bullet text traces verbatim to the master resume: "${b.text.slice(0, 50)}..."`);
     }
@@ -164,7 +166,7 @@ async function main(): Promise<void> {
   const truthfulness = validateTruthfulness(master, baseline);
   assert(truthfulness.status === 'PASSED', `truthfulness status: ${truthfulness.status}`);
 
-  console.log('\n=== 6. Rendering Jake\'s Resume LaTeX -> compiling with REAL pdflatex ===');
+  console.log('\n=== 6. Rendering the custom LaTeX/Overleaf template -> compiling with REAL pdflatex ===');
   const optimized = await optimizeToOnePage(baseline);
   assert(optimized.pageCount === 1, `final PDF page count: ${optimized.pageCount} (must be exactly 1)`);
   console.log(`  optimization passes applied: ${optimized.steps.length}`);

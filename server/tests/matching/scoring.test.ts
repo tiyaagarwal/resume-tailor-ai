@@ -3,6 +3,7 @@ import { structureResume } from '../../src/parsers/structure.ts';
 import { analyzeJobDescription } from '../../src/parsers/jd.ts';
 import { buildJdIndex, computeAtsScore } from '../../src/matching/scoring.ts';
 import { rankContent, skillsOmittedButOwned } from '../../src/matching/ranking.ts';
+import { allSkills } from '../../src/types/resume.ts';
 
 const RESUME_TEXT = `
 Priya Nair
@@ -70,21 +71,14 @@ describe('scoring + ranking', () => {
     expect(ats.missingFromMasterResume.map((s) => s.toLowerCase())).toContain('kubernetes');
   });
 
-  it('never introduces a skill into the ranked output that is absent from the master resume', () => {
+  it('never introduces a skill into the ranked output that is absent from the master resume (outside the explicit skills-fabrication override)', () => {
     const ranked = rankContent(master, jd, index);
-    const shown = new Set(
-      [...ranked.skills.languages, ...ranked.skills.frameworks, ...ranked.skills.tools, ...ranked.skills.technologies].map((s) =>
-        s.toLowerCase(),
-      ),
+    const genuine = new Set(
+      ranked.skills.flatMap((c) => c.items).map((s) => s.toLowerCase()),
     );
-    for (const s of shown) {
-      const inMaster = [
-        ...master.skills.languages,
-        ...master.skills.frameworks,
-        ...master.skills.tools,
-        ...master.skills.technologies,
-      ].some((m) => m.toLowerCase() === s);
-      expect(inMaster).toBe(true);
+    const inMasterResume = new Set(allSkills(master.skills).map((s) => s.toLowerCase()));
+    for (const s of genuine) {
+      expect(inMasterResume.has(s)).toBe(true);
     }
   });
 

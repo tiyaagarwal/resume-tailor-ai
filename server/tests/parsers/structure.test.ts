@@ -77,4 +77,80 @@ describe('structureResume', () => {
     expect(() => structureResume({ text: 'Just some unrelated text with no headings.', sourceFileName: 'x.txt', links: [] }))
       .not.toThrow(); // structuring itself never throws — parseMasterResume (parsers/index.ts) is what enforces non-empty content
   });
+
+  it('maps a recognized skill sub-heading onto the new default category taxonomy', () => {
+    const languages = resume.skills.find((c) => c.name === 'Programming');
+    expect(languages?.items).toEqual(expect.arrayContaining(['Python', 'Java', 'JavaScript']));
+    const frameworks = resume.skills.find((c) => c.name === 'Frameworks & Libraries');
+    expect(frameworks?.items).toEqual(expect.arrayContaining(['React', 'Node.js', 'Spring Boot']));
+  });
+});
+
+const SAMPLE_WITH_NEW_SECTIONS = `
+Rohan Mehta
+rohan.mehta@example.com | +91 90000 11111
+
+EXPERIENCE
+Backend Engineer | Contoso | Remote
+Jan 2023 -- Present
+- Built a payments service in Go and PostgreSQL.
+
+TECHNICAL SKILLS
+Languages: Go, Python
+
+WORKSHOPS
+Distributed Systems Bootcamp, LinuxFoundation, 2023
+
+HACKATHONS
+CityHacks 2023, Winner
+
+EXTRA CURRICULAR
+Treasurer — Robotics Club — Managed a $5,000 annual budget.
+
+ACHIEVEMENTS
+Solved 300+ DSA problems: arrays, linked lists, trees, graphs, dynamic programming.
+`.trim();
+
+describe('structureResume — Workshops/Hackathons/Extra-Curricular and DSA signal', () => {
+  const links = [
+    { label: 'Certificate', url: 'https://contoso.example.com/cert/rohan', context: 'Backend Engineer | Contoso | Remote' },
+  ];
+  const resume = structureResume({ text: SAMPLE_WITH_NEW_SECTIONS, sourceFileName: 'resume.txt', links });
+
+  it('recognizes a WORKSHOPS heading and parses its entries', () => {
+    expect(resume.workshops).toHaveLength(1);
+    expect(resume.workshops[0].title).toContain('Distributed Systems Bootcamp');
+  });
+
+  it('recognizes a HACKATHONS heading and parses its entries', () => {
+    expect(resume.hackathons).toHaveLength(1);
+    expect(resume.hackathons[0].name).toContain('CityHacks 2023');
+    expect(resume.hackathons[0].result).toBe('Winner');
+  });
+
+  it('recognizes an EXTRA CURRICULAR heading and parses role/organization/impact', () => {
+    expect(resume.extraCurricular).toHaveLength(1);
+    expect(resume.extraCurricular[0].role).toBe('Treasurer');
+    expect(resume.extraCurricular[0].organization).toBe('Robotics Club');
+  });
+
+  it('detects an existing DSA-practice claim and synthesizes a Core CS skill category from it, never a made-up count', () => {
+    expect(resume.dsaSignal?.count).toBe(300);
+    const coreCs = resume.skills.find((c) => c.name === 'Core CS');
+    expect(coreCs?.items[0]).toContain('300+ problems solved');
+  });
+
+  it('omits the DSA signal entirely (never fabricates a count) when the resume makes no such claim', () => {
+    const noDsaResume = structureResume({
+      text: SAMPLE_WITH_NEW_SECTIONS.replace(/ACHIEVEMENTS[\s\S]*$/, ''),
+      sourceFileName: 'resume.txt',
+      links: [],
+    });
+    expect(noDsaResume.dsaSignal).toBeUndefined();
+    expect(noDsaResume.skills.some((c) => c.name === 'Core CS')).toBe(false);
+  });
+
+  it('associates a role\'s own completion-certificate link via recovered link context, never a generic profile link', () => {
+    expect(resume.experience[0].certificateUrl).toBe('https://contoso.example.com/cert/rohan');
+  });
 });

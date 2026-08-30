@@ -25,11 +25,21 @@ function numbersIn(text: string): Set<string> {
   return new Set((text.match(NUMBER_RE) ?? []).map((n) => n.replace(/,/g, '')));
 }
 
+/** Strips the `**bold**` markers the AI may add around existing key
+ *  phrases/metrics (see ai/tailor.ts) before diffing, so a legitimate
+ *  bold-marked rewrite of an unchanged number/technology can never look
+ *  like injected content. */
+function stripBoldMarkers(text: string): string {
+  return text.replace(/\*\*/g, '');
+}
+
 /** Bullets may legitimately mention skills that live at the entry/master-resume level,
  *  not just verbatim in that one bullet — e.g. a project bullet naming a language
  *  declared in the candidate's skills list. Only genuinely new technology is a violation. */
-function checkBullet(original: string, rewritten: string, knownSkills: Set<string>): string[] {
+function checkBullet(originalRaw: string, rewrittenRaw: string, knownSkills: Set<string>): string[] {
   const violations: string[] = [];
+  const original = stripBoldMarkers(originalRaw);
+  const rewritten = stripBoldMarkers(rewrittenRaw);
 
   const origNums = numbersIn(original);
   const newNums = [...numbersIn(rewritten)].filter((n) => !origNums.has(n));
@@ -52,7 +62,7 @@ export function validateTruthfulness(master: MasterResume, tailored: TailoredRes
   const knownSkills = new Set(allSkills(master.skills).map((s) => s.toLowerCase()));
   const violations: string[] = [];
 
-  for (const group of [...tailored.experience, ...tailored.internships, ...tailored.projects]) {
+  for (const group of [...tailored.experience, ...tailored.projects]) {
     for (const b of group.bullets) {
       violations.push(...checkBullet(b.original, b.text, knownSkills));
     }
@@ -62,7 +72,7 @@ export function validateTruthfulness(master: MasterResume, tailored: TailoredRes
   // so it is checked against the candidate's declared skills and role titles
   // instead: any named technology it uses must already be true of the resume.
   if (tailored.summary.trim()) {
-    const mentioned = detectSkills(tailored.summary);
+    const mentioned = detectSkills(stripBoldMarkers(tailored.summary));
     const unknown = mentioned.filter((s) => !knownSkills.has(s.toLowerCase()));
     if (unknown.length > 0) {
       violations.push(`Summary mentions technology not found in the master resume's skills: "${unknown.join(', ')}"`);
@@ -91,7 +101,6 @@ export function revertViolatingBullets(master: MasterResume, tailored: TailoredR
   return {
     ...tailored,
     experience: fix(tailored.experience),
-    internships: fix(tailored.internships),
     projects: fix(tailored.projects),
   };
 }

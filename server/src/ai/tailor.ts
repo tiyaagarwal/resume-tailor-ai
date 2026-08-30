@@ -1,5 +1,6 @@
 import type { JobDescription } from '../types/jd.ts';
 import type { MasterResume } from '../types/resume.ts';
+import { allSkills } from '../types/resume.ts';
 import type { TailoredBullet, TailoredResume } from '../types/tailored.ts';
 import { env } from '../config/env.ts';
 import { logger } from '../utils/logger.ts';
@@ -25,7 +26,7 @@ interface BulletTask {
 
 function collectBulletTasks(resume: TailoredResume): BulletTask[] {
   const tasks: BulletTask[] = [];
-  for (const group of [...resume.experience, ...resume.internships, ...resume.projects]) {
+  for (const group of [...resume.experience, ...resume.projects]) {
     for (const b of group.bullets) {
       if (b.locked) continue;
       tasks.push({ id: `${b.sourceId}:${b.sourceIndex}`, original: b.original, relevantTerms: [] });
@@ -39,7 +40,7 @@ function buildPrompt(
   jd: JobDescription,
   tasks: BulletTask[],
 ): { system: string; user: string } {
-  const system = `You rewrite resume bullet points for ATS optimization. You NEVER invent, exaggerate, or add any fact, number, technology, or outcome that is not already stated in the bullet you are given. You may: rephrase, shorten, apply an "Action verb + what was built + technology + genuine result" structure, fix grammar, and surface technology names that are already present in the bullet more prominently. You must NOT: add metrics/percentages that are not already in the text, add technologies not already in the text, change the subject of the sentence, or claim a different scope of impact. If a bullet has no genuine result stated, do not invent one — just describe the action and technology. Respond with ONLY a JSON object, no prose, no markdown fences.`;
+  const system = `You rewrite resume bullet points for ATS optimization. You NEVER invent, exaggerate, or add any fact, number, technology, or outcome that is not already stated in the bullet you are given. You may: rephrase, shorten, apply an "Action verb + what was built + technology + genuine result" structure, fix grammar, and surface technology names that are already present in the bullet more prominently. You must NOT: add metrics/percentages that are not already in the text, add technologies not already in the text, change the subject of the sentence, or claim a different scope of impact. If a bullet has no genuine result stated, do not invent one — just describe the action and technology. You may wrap the 1-2 most impactful EXISTING phrases or metrics per bullet in double-asterisk markdown bold markers (e.g. "**40%**" or "**REST API**") so the renderer can bold them — never wrap text that isn't already in the bullet, and never leave a marker unbalanced. Respond with ONLY a JSON object, no prose, no markdown fences.`;
 
   const user = `Job title: ${jd.jobTitle}
 Company: ${jd.company}
@@ -48,7 +49,7 @@ JD preferred skills: ${jd.preferredSkills.slice(0, 15).join(', ') || 'none liste
 JD ATS keywords: ${jd.atsKeywords.slice(0, 20).join(', ') || 'none listed'}
 
 Candidate's professional summary source material (use ONLY these facts, do not add employers/skills/degrees not listed):
-- Most relevant skills: ${[...master.skills.languages, ...master.skills.frameworks, ...master.skills.technologies].slice(0, 12).join(', ')}
+- Most relevant skills: ${allSkills(master.skills).slice(0, 12).join(', ')}
 - Top role: ${master.experience[0] ? `${master.experience[0].role} at ${master.experience[0].organization}` : master.internships[0] ? `${master.internships[0].role} at ${master.internships[0].organization}` : 'none'}
 - Education: ${master.education[0] ? `${master.education[0].degree} — ${master.education[0].institution}` : 'none'}
 
@@ -57,8 +58,8 @@ ${JSON.stringify(tasks.map((t) => ({ id: t.id, text: t.original })), null, 2)}
 
 Return exactly this JSON shape:
 {
-  "summary": "one or two sentences, 220 chars max, using ONLY facts listed above, or empty string if you cannot write one truthfully",
-  "bullets": [{ "id": "string matching an input id", "text": "rewritten bullet, under 220 characters" }]
+  "summary": "2-3 sentences, third person, no heading label, 320 chars max, using ONLY facts listed above, or empty string if you cannot write one truthfully",
+  "bullets": [{ "id": "string matching an input id", "text": "rewritten bullet, under 220 characters, may contain **bold** markers around existing key phrases/metrics" }]
 }`;
 
   return { system, user };
@@ -74,9 +75,15 @@ function parseResponse(raw: string, tasks: BulletTask[]): ClaudeTailorResponse |
     const parsed = JSON.parse(stripJsonFence(raw)) as ClaudeTailorResponse;
     if (typeof parsed.summary !== 'string' || !Array.isArray(parsed.bullets)) return null;
     const validIds = new Set(tasks.map((t) => t.id));
-    parsed.bullets = parsed.bullets.filter(
-      (b) => typeof b.id === 'string' && validIds.has(b.id) && typeof b.text === 'string' && b.text.trim(),
-    );
+    parsed.bullets = parsed.bullets
+      .filter((b) => typeof b.id === 'string' && validIds.has(b.id) && typeof b.text === 'string' && b.text.trim())
+      .map((b) => {
+        // An odd count of "**" markers means an unbalanced/malformed bold
+        // span — strip all markers from that bullet rather than reject the
+        // whole response over one cosmetic slip.
+        const markerCount = (b.text.match(/\*\*/g) ?? []).length;
+        return markerCount % 2 === 0 ? b : { ...b, text: b.text.replace(/\*\*/g, '') };
+      });
     return parsed;
   } catch (err) {
     log.warn('could not parse Claude tailoring response as JSON', (err as Error).message);
@@ -102,7 +109,6 @@ function applyRewrites(resume: TailoredResume, response: ClaudeTailorResponse): 
     ...resume,
     summary: response.summary?.trim() || resume.summary,
     experience: resume.experience.map((e) => ({ ...e, bullets: e.bullets.map(rewrite) })),
-    internships: resume.internships.map((e) => ({ ...e, bullets: e.bullets.map(rewrite) })),
     projects: resume.projects.map((p) => ({ ...p, bullets: p.bullets.map(rewrite) })),
   };
 }

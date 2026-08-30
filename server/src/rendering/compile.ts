@@ -50,9 +50,11 @@ export interface CompileResult {
 /**
  * Compiles LaTeX to PDF in an isolated temp directory.
  *
- * Runs twice: the starred tabular environment with \extracolsep{\fill} used by
- * Jake's template needs a second pass for column widths to settle, otherwise
- * the right-aligned dates drift.
+ * Runs twice as cheap insurance: hyperref/tabularx sometimes need a second
+ * pass to settle cross-references and column widths. (The current template
+ * uses `tabularx`, not the starred `tabular*`/`\extracolsep{\fill}` layout
+ * that originally required this — a single pass may now suffice, but the
+ * second pass is harmless and kept defensively.)
  */
 export async function compileLatex(source: string): Promise<CompileResult> {
   await ensureEngine();

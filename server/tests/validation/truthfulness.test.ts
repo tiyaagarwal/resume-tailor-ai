@@ -27,7 +27,7 @@ function tailoredWithBulletText(text: string): TailoredResume {
     sectionOrder: ['experience'],
     hiddenSections: [],
     education: [],
-    skills: { languages: [], frameworks: [], libraries: [], tools: [], technologies: [], other: [] },
+    skills: [{ name: 'Programming', items: [] }],
     experience: [
       {
         id: master.experience[0].id,
@@ -46,10 +46,11 @@ function tailoredWithBulletText(text: string): TailoredResume {
         relevance: 0.5,
       },
     ],
-    internships: [],
     projects: [],
+    workshops: [],
+    hackathons: [],
     certifications: [],
-    achievements: [],
+    extraCurricular: [],
   };
 }
 
@@ -75,6 +76,21 @@ describe('validateTruthfulness', () => {
     );
     expect(result.status).toBe('FAILED');
     expect(result.violations.some((v) => v.includes('Kubernetes'))).toBe(true);
+  });
+
+  it('never checks tailored.skills — this is the mechanism implementing the explicit, narrowly-scoped skills-fabrication override', () => {
+    const tailored = tailoredWithBulletText('Built a Redis caching layer to speed up requests.');
+    tailored.skills = [{ name: 'Cloud & Deployment', items: [], fabricated: ['Kubernetes', 'Terraform'] }];
+    const result = validateTruthfulness(master, tailored);
+    expect(result.status).toBe('PASSED');
+  });
+
+  it('does not treat a legitimate **bold** marker around an unchanged number/technology as a fabrication', () => {
+    const result = validateTruthfulness(
+      master,
+      tailoredWithBulletText('Built a **Redis** caching layer using Redis.'),
+    );
+    expect(result.status).toBe('PASSED');
   });
 });
 

@@ -1,4 +1,4 @@
-import type { ProfileLink, ResumeLinks } from '../types/resume.ts';
+import type { ExperienceEntry, ProfileLink, ResumeLinks } from '../types/resume.ts';
 
 /**
  * Sorts raw discovered links into the typed slots the renderer understands.
@@ -117,4 +117,39 @@ export function findProjectLinks(
     }
   }
   return { repoUrl, liveUrl };
+}
+
+/**
+ * Associates each role's own completion-certificate URL (never a generic
+ * profile link) by first trying to match a link's recovered `context` text
+ * against that role's own role/organization/bullet text, falling back to a
+ * certificate-labeled link only when no context match exists. Mutates the
+ * given entries in place; `claimed` (shared across a whole resume's roles)
+ * ensures the same link is never assigned to two different roles.
+ */
+const normalize = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+export function associateCertificateLinks(entries: ExperienceEntry[], discovered: ProfileLink[]): void {
+  const claimed = new Set<string>();
+
+  for (const entry of entries) {
+    const blob = normalize([entry.role, entry.organization, ...entry.bullets].join(' '));
+
+    const contextMatch = discovered.find(
+      (link) => !claimed.has(link.url) && link.context && blob.includes(normalize(link.context).slice(0, 20)),
+    );
+    if (contextMatch) {
+      claimed.add(contextMatch.url);
+      entry.certificateUrl = contextMatch.url;
+      continue;
+    }
+
+    const labelMatch = discovered.find(
+      (link) => !claimed.has(link.url) && /certificate|certification|credential/i.test(link.label),
+    );
+    if (labelMatch) {
+      claimed.add(labelMatch.url);
+      entry.certificateUrl = labelMatch.url;
+    }
+  }
 }

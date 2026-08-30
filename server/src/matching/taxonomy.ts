@@ -1,3 +1,4 @@
+import type { DefaultSkillCategory } from '../types/resume.ts';
 import { skillKey } from '../utils/text.ts';
 
 /**
@@ -138,6 +139,52 @@ register('HTML');
 register('CSS');
 register('Sass', 'scss');
 register('Figma');
+
+/**
+ * Maps a canonical skill onto one of the app's default Skills categories.
+ * Used only to place a JD-only keyword into the right category when
+ * injecting it (the skills-fabrication override, scoped to this app's
+ * custom LaTeX template) — never to add a skill on its own. "Core CS" is
+ * deliberately never a target: it is exclusively evidence-derived from an
+ * existing claim in the resume's own text (see parsers/signals.ts).
+ */
+const CATEGORY_GROUPS: Record<DefaultSkillCategory, string[]> = {
+  Programming: [
+    'Python', 'Java', 'JavaScript', 'TypeScript', 'C++', 'C#', 'Go', 'Rust', 'Ruby', 'PHP',
+    'Swift', 'Kotlin', 'Scala', 'R', 'SQL', 'MATLAB', 'Bash', 'C', 'Data Structures', 'Algorithms',
+  ],
+  'Core CS': [],
+  'Frameworks & Libraries': [
+    'React', 'Next.js', 'Angular', 'Vue', 'Node.js', 'Express', 'Spring Boot', 'Django', 'Flask',
+    'FastAPI', 'Rails', '.NET', 'Svelte', 'Tailwind CSS', 'Redux', 'GraphQL', 'gRPC', 'REST APIs',
+    'HTML', 'CSS', 'Sass',
+  ],
+  Databases: [
+    'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'DynamoDB', 'Elasticsearch', 'SQLite', 'Cassandra',
+    'Snowflake', 'FAISS', 'Pinecone', 'Vector Databases',
+  ],
+  'Developer Tools & Platforms': [
+    'Git', 'Linux', 'Jira', 'Postman', 'Microservices', 'System Design', 'Distributed Systems',
+    'Unit Testing', 'JUnit', 'Mockito', 'Jest', 'Pytest', 'Selenium', 'JWT', 'OAuth', 'WebSockets',
+    'Figma', 'Agile',
+  ],
+  'Cloud & Deployment': [
+    'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Terraform', 'Jenkins', 'CI/CD',
+    'GitHub Actions', 'Serverless', 'SageMaker', 'Lambda', 'S3', 'EC2', 'MLflow', 'Weights & Biases',
+  ],
+  'AI Automation & Machine Learning': [
+    'PyTorch', 'TensorFlow', 'Keras', 'scikit-learn', 'Hugging Face', 'LangChain', 'OpenCV',
+    'Machine Learning', 'Deep Learning', 'NLP', 'Computer Vision', 'LLM', 'RAG', 'MLOps',
+    'Recommendation Systems', 'Reinforcement Learning', 'Feature Engineering', 'Model Deployment',
+  ],
+  'Data Science & Analytics': ['pandas', 'NumPy', 'Spark', 'Hadoop', 'Airflow', 'Kafka', 'Statistics'],
+  'Soft Skills': [],
+};
+
+export const CANONICAL_SKILL_CATEGORY: Record<string, DefaultSkillCategory> = {};
+for (const [category, names] of Object.entries(CATEGORY_GROUPS) as Array<[DefaultSkillCategory, string[]]>) {
+  for (const name of names) CANONICAL_SKILL_CATEGORY[name] = category;
+}
 
 /** Multi-word canonical names, longest first, for greedy phrase matching. */
 export const MULTIWORD_SKILLS: string[] = Object.values(CANONICAL_SKILLS)
