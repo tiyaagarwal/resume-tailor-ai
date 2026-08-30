@@ -47,14 +47,16 @@ async function load(): Promise<Store> {
     cache = emptyStore();
     return cache;
   }
+  let loaded: Store;
   try {
     const raw = await readFile(path, 'utf8');
-    cache = { ...emptyStore(), ...JSON.parse(raw) };
+    loaded = { ...emptyStore(), ...JSON.parse(raw) };
   } catch (err) {
     log.error(`could not read ${path}, starting from an empty store`, (err as Error).message);
-    cache = emptyStore();
+    loaded = emptyStore();
   }
-  return cache;
+  cache = loaded;
+  return loaded;
 }
 
 /** Writes are serialised through one queue so concurrent requests can't interleave a partial file. */

@@ -256,6 +256,19 @@ function parseExperience(lines: string[], kind: 'experience' | 'internship'): Ex
       continue;
     }
 
+    // A layout where the date range renders on its own line (common when a
+    // right-aligned date column gets extracted as a separate paragraph) is
+    // a continuation of the previous role, never a new one.
+    if (isDateOnly(line)) {
+      const prev = entries[entries.length - 1];
+      if (prev && !prev.endDate) {
+        const { startDate, endDate } = splitDates(line);
+        prev.startDate ??= startDate;
+        prev.endDate = endDate;
+      }
+      continue;
+    }
+
     // A header line introduces a new role. It carries a date range or commas.
     const { startDate, endDate } = splitDates(line);
     const withoutDates = line.replace(DATE_RE, '').replace(/\s*[—–|]\s*$/, '').trim();
