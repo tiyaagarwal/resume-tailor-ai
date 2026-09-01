@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: resume-tailor-ai
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Optional — enables Claude-based tailoring/critique instead of the
+      # offline heuristic engine. Set this in the Render dashboard after
+      # the service is created; never commit a real key here.
+      - key: ANTHROPIC_API_KEY
+        sync: false
