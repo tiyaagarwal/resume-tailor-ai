@@ -18,10 +18,10 @@ server/dist/
 *.tsbuildinfo
 
 # Runtime data: uploaded resumes and generated artifacts are user data
-data/uploads/
-data/generated/
-data/db.json
-data/db.json.tmp
+server/data/uploads/
+server/data/generated/
+server/data/db.json
+server/data/db.json.tmp
 
 # LaTeX intermediates
 *.aux
