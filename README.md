@@ -285,6 +285,9 @@ It runs the entire pipeline against sample data end-to-end and writes a real com
 | `POST` | `/api/generations/:id/regenerate` | Re-run AI tailoring + validation, respecting locked bullets |
 | `POST` | `/api/generations/:id/optimize` | Re-run only the one-page optimizer on edited content |
 | `PATCH` | `/api/generations/:id/sections` | Toggle section visibility |
+| `POST` | `/api/generations/:id/critique` | Claude reviews the generated resume against its JD (ATS score, strengths, improvement areas); no offline fallback |
+| `POST` | `/api/generations/:id/gap-suggestions` | Search another master resume (`masterResumeId`) for real content addressing the critique's improvement areas |
+| `POST` | `/api/generations/:id/regenerate-additive` | Merge accepted gap suggestions in and re-render, without removing any existing content |
 | `GET` | `/api/history` | List all generations (optionally `?masterResumeId=`) |
 | `GET` | `/api/generations/:id/download.pdf` / `.docx` | Download a generated file |
 | `POST` | `/api/generations/:id/duplicate` | Clone a version |
