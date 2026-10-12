@@ -6,8 +6,8 @@ import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Proxies /api to the backend during local dev so the client never needs a
-// hardcoded absolute URL. See server/.env.example for CORS_ORIGIN — this must
-// match the port Vite prints when it starts.
+// hardcoded absolute URL. See the repo-root .env.example for CORS_ORIGIN —
+// this must match the port Vite prints when it starts.
 export default defineConfig(({ mode }) => {
   // The project's .env lives at the repo root, not client/, and holds
   // unprefixed keys (CLIENT_PORT, PORT) — loadEnv with an empty prefix is
