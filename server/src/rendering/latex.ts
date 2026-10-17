@@ -37,23 +37,92 @@ export const DEFAULT_LAYOUT: LayoutOptions = {
   experienceEntryGapPt: 3,
 };
 
+/** LaTeX's reserved characters, escaped in a single pass so the braces in a
+ *  replacement (e.g. `\textbackslash{}`) are never escaped again. */
+const LATEX_SPECIALS: Record<string, string> = {
+  '\\': '\\textbackslash{}',
+  '&': '\\&',
+  '%': '\\%',
+  $: '\\$',
+  '#': '\\#',
+  _: '\\_',
+  '{': '\\{',
+  '}': '\\}',
+  '~': '\\textasciitilde{}',
+  '^': '\\textasciicircum{}',
+};
+
+/**
+ * Plain-text stand-ins for characters pdflatex can't typeset with this
+ * template (T1 fonts, no math fonts relied on). Any one of these left raw
+ * halts compilation with "Unicode character ... not set up for use with
+ * LaTeX", so the whole resume fails to render.
+ */
+const UNICODE_FALLBACKS: Record<string, string> = {
+  '–': '--',
+  '—': '---',
+  '‘': "'",
+  '’': "'",
+  '“': "''",
+  '”': "''",
+  '•': '',
+  '′': "'",
+  '″': "''",
+  '−': '-',
+  '≥': '>=',
+  '≤': '<=',
+  '≠': '!=',
+  '≈': '\\textasciitilde{}',
+  '⇒': '→',
+  '₹': 'Rs.',
+  ...greekLetterNames(),
+};
+
+function greekLetterNames(): Record<string, string> {
+  const names = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa', 'lambda', 'mu',
+    'nu', 'xi', 'omicron', 'pi', 'rho', 'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega'];
+  const map: Record<string, string> = { 'ς': 'sigma' };
+  names.forEach((name, i) => {
+    // Final sigma (U+03C2) and the unassigned U+03A2 sit just before sigma, so sigma onwards shift by one.
+    const offset = i >= names.indexOf('sigma') ? i + 1 : i;
+    map[String.fromCodePoint(0x3b1 + offset)] = name;
+    map[String.fromCodePoint(0x391 + offset)] = name[0].toUpperCase() + name.slice(1);
+  });
+  return map;
+}
+
+/** pdflatex-safe letters: Latin-1, Latin Extended-A minus the few T1 lacks,
+ *  Romanian comma-accents, and the punctuation the utf8 input encoding maps. */
+const TYPESETTABLE = /^[\x20-\x7E\u00A0-\u017F\u0218-\u021B‐‑‚„†‡…‰‹›€™←↑→↓ﬁﬂ]$/u;
+const NOT_IN_T1 = new Set('ĦħĸĿŀŉŦŧſ');
+
+function isTypesettable(ch: string): boolean {
+  return TYPESETTABLE.test(ch) && !NOT_IN_T1.has(ch);
+}
+
+function escapeChar(ch: string): string {
+  if (ch in LATEX_SPECIALS) return LATEX_SPECIALS[ch];
+  if (ch in UNICODE_FALLBACKS) return UNICODE_FALLBACKS[ch];
+  if (isTypesettable(ch)) return ch;
+  // Keep what compatibility decomposition can salvage (ǎ -> a, ﬃ -> ffi,
+  // full-width Ａ -> A); drop the rest (emoji, CJK, ✓, zero-width spaces).
+  return Array.from(ch.normalize('NFKD'))
+    .filter(isTypesettable)
+    .map((c) => LATEX_SPECIALS[c] ?? c)
+    .join('');
+}
+
 /**
  * Escapes text for LaTeX.
  * Resume content routinely contains %, &, _, # and $ (C#, R&D, 40%), any of
- * which silently breaks compilation or corrupts output if left raw.
+ * which silently breaks compilation or corrupts output if left raw, and
+ * symbols like ≥, ₹, α or emoji that pdflatex refuses to compile at all.
  */
 export function escapeLatex(input: string): string {
   if (!input) return '';
-  return input
-    .replace(/\\/g, '\\textbackslash{}')
-    .replace(/([&%$#_{}])/g, '\\$1')
-    .replace(/~/g, '\\textasciitilde{}')
-    .replace(/\^/g, '\\textasciicircum{}')
-    .replace(/–/g, '--')
-    .replace(/—/g, '---')
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, "''")
-    .replace(/•/g, '')
+  return Array.from(input.replace(/\s+/g, ' '))
+    .map(escapeChar)
+    .join('')
     .replace(/\s+/g, ' ')
     .trim();
 }
