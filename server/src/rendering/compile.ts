@@ -29,12 +29,16 @@ export async function ensureEngine(): Promise<void> {
   }
 }
 
-/** Pulls the meaningful error out of a LaTeX log, which is mostly noise. */
-function summarizeLatexLog(logText: string): string {
+/**
+ * Pulls the meaningful error out of a LaTeX log, which is mostly noise.
+ * With -file-line-error, errors are logged as "./resume.tex:42: ..." instead
+ * of the classic "! ..." form, so both are recognised.
+ */
+export function summarizeLatexLog(logText: string): string {
   const lines = logText.split('\n');
   const errors: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith('!')) {
+    if (lines[i].startsWith('!') || /^\S+\.tex:\d+: /.test(lines[i])) {
       errors.push(lines.slice(i, i + 3).join(' ').replace(/\s+/g, ' ').trim());
       if (errors.length >= 3) break;
     }

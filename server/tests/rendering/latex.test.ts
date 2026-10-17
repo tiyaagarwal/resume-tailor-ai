@@ -62,6 +62,27 @@ describe('escapeLatex', () => {
   it('normalises smart quotes and dashes', () => {
     expect(escapeLatex('“quoted” — text')).not.toMatch(/[“”—]/);
   });
+
+  it('escapes a backslash without escaping the braces of its own replacement', () => {
+    expect(escapeLatex('C:\\Users\\dev')).toBe('C:\\textbackslash{}Users\\textbackslash{}dev');
+    expect(escapeLatex('{x}^2 ~ y')).toBe('\\{x\\}\\textasciicircum{}2 \\textasciitilde{} y');
+  });
+
+  it('replaces symbols pdflatex cannot typeset with text equivalents', () => {
+    expect(escapeLatex('Cut latency ≥ 40% at ₹2 cost − 3 ⇒ win')).toBe('Cut latency >= 40\\% at Rs.2 cost - 3 → win');
+    expect(escapeLatex('Tuned α and β; ΔT ≈ 5')).toBe('Tuned alpha and beta; DeltaT \\textasciitilde{} 5');
+    expect(escapeLatex('σ ς Σ ω Ω')).toBe('sigma sigma Sigma omega Omega');
+  });
+
+  it('keeps accented Latin letters and drops what cannot be typeset', () => {
+    expect(escapeLatex('José Łukasz Ștefan')).toBe('José Łukasz Ștefan');
+    expect(escapeLatex('Shipped ✓ 🚀 中文 v2\u200b.0')).toBe('Shipped v2.0');
+    expect(escapeLatex('ǎ ﬃ Ａ＆Ｂ')).toBe('a ffi A\\&B');
+  });
+
+  it('collapses line breaks and tabs to single spaces', () => {
+    expect(escapeLatex('line one\n\tline • two')).toBe('line one line two');
+  });
 });
 
 describe('escapeUrl', () => {
