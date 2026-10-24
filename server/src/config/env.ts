@@ -38,9 +38,24 @@ function optional(name: string, fallback: string): string {
   return v && v.trim() ? v.trim() : fallback;
 }
 
+/**
+ * CORS_ORIGIN is documented (.env.example) as comma-separated. A bare string
+ * handed to the `cors` package is matched as a single fixed origin, so a
+ * comma-separated value would never match a real Origin header and the
+ * resulting invalid Access-Control-Allow-Origin header would break CORS for
+ * every origin. Splitting into an array lets `cors` validate against each
+ * one individually, as documented.
+ */
+function parseOrigins(value: string): string[] {
+  return value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 export const env = {
   port: Number(optional('PORT', '4000')),
-  corsOrigin: optional('CORS_ORIGIN', 'http://localhost:5173'),
+  corsOrigin: parseOrigins(optional('CORS_ORIGIN', 'http://localhost:5173')),
   dataDir: optional('DATA_DIR', './data'),
   databaseUrl: optional('DATABASE_URL', 'file:./data/db.json'),
   latexEngine: optional('LATEX_ENGINE', 'pdflatex'),
@@ -55,7 +70,7 @@ export const env = {
  * over), so a missing key is a warning, never a startup failure.
  */
 export function reportConfig(): void {
-  log.info(`listening config: port=${env.port} corsOrigin=${env.corsOrigin}`);
+  log.info(`listening config: port=${env.port} corsOrigin=${env.corsOrigin.join(',')}`);
   if (!env.anthropicApiKey) {
     log.warn(
       'ANTHROPIC_API_KEY is not set. Tailoring will use the offline heuristic engine instead of Claude — resumes are still generated, ranked and validated, just without AI-rewritten phrasing. Set ANTHROPIC_API_KEY in .env to enable the AI engine.',
